@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Dolby Atmos</string>
+    <string name="dolby_atmos">Dolby Atmos</string>
+    <string name="dolby_summary">Cinematic 3D soundstage with intelligent clarity and depth</string>
+    <string name="xiaomi_sound">Xiaomi Sound</string>
+    <string name="xiaomi_sound_summary">Custom acoustic tuning tailored for Xiaomi high-fidelity audio hardware</string>
+    <string name="effect_off">Off</string>
+    <string name="effect_off_summary">Direct DAC output without additional audio enhancement processing</string>
+    <string name="category_processing">Audio Processing Engine</string>
+    <string name="category_spatial">Spatial &amp; Surround Sound</string>
+    <string name="immersive_sound">Immersive sound</string>
+    <string name="immersive_sound_summary">Spatial audio experience for supported multi-channel content</string>
+    <string name="virtualizer">Surround sound (Virtualizer)</string>
+    <string name="virtualizer_summary">Expand stereo acoustic separation for headphones and speakers</string>
+    <string name="virtualizer_intensity">Virtualizer intensity</string>
+</resources>
