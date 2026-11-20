@@ -6,8 +6,6 @@ import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.media.Spatializer
 import android.media.audiofx.AudioEffect
-import android.media.audiofx.Equalizer
-import android.media.audiofx.Virtualizer
 import android.os.IBinder
 import android.os.Parcel
 import android.os.UserHandle
@@ -67,15 +65,25 @@ class AudioEffectManager(private val context: Context) {
         private const val EFFECT_PARAM_PROFILE_PARAMETER = 0x1000000
         private const val EFFECT_PARAM_PROFILE_PORT_PARAMETER = 0x2000000
         private const val EFFECT_PARAM_RESET_PROFILE_SETTINGS = 0x0c000000
-        private const val DAP_PARAM_HEADPHONE_VIRTUALIZER = 0x65 // 101
-        private const val DAP_PARAM_SPEAKER_VIRTUALIZER = 0x66   // 102
-        private const val DAP_PARAM_GEQ_BAND_GAINS = 110
-        private const val DAP_PARAM_BASS_ENHANCER_ENABLE = 111
-        private const val DAP_PARAM_DIALOG_ENHANCER_ENABLE = 104
-        private const val DAP_PARAM_DIALOG_ENHANCER_AMOUNT = 105
-        private const val DAP_PARAM_VOLUME_LEVELER_ENABLE = 112
-        private const val DAP_PARAM_VOLUME_LEVELER_AMOUNT = 114
-        private const val DAP_PARAM_STEREO_WIDENING = 0x71       // 113
+        private const val EFFECT_PARAM_SELECTED_TUNING_DEVICE = 4
+
+        // Exact parameter IDs from com.dolby.dax.DsParams
+        private const val DAP_PARAM_HEADPHONE_VIRTUALIZER = 101       // 0x65 (DolbyHeadphoneVirtualizerControl)
+        private const val DAP_PARAM_SPEAKER_VIRTUALIZER = 102         // 0x66 (DolbyVirtualSpeakerVirtualizerControl)
+        private const val DAP_PARAM_VOLUME_LEVELER_ENABLE = 103       // 0x67 (DolbyVolumeLevelerEnable)
+        private const val DAP_PARAM_IEQ_PRESET = 104                  // 0x68 (IntelligentEqualizerPreset)
+        private const val DAP_PARAM_DIALOG_ENHANCER_ENABLE = 105      // 0x69 (DialogEnhancementEnable)
+        private const val DAP_PARAM_GEQ_ENABLE = 106                  // 0x6a (GraphicEqualizerEnable)
+        private const val DAP_PARAM_IEQ_AMOUNT = 107                  // 0x6b (IntelligentEqualizerAmount)
+        private const val DAP_PARAM_DIALOG_ENHANCER_AMOUNT = 108      // 0x6c (DialogEnhancementAmount)
+        private const val DAP_PARAM_DIALOG_ENHANCER_DUCKING = 109     // 0x6d (DialogEnhancementDucking)
+        private const val DAP_PARAM_GEQ_BAND_GAINS = 110              // 0x6e (GraphicEqualizerBandGains)
+        private const val DAP_PARAM_BASS_ENHANCER_ENABLE = 111        // 0x6f (BassEnable)
+        private const val DAP_PARAM_VIRTUAL_BASS_ENABLE = 112         // 0x70 (VirtualBassEnable)
+        private const val DAP_PARAM_STEREO_WIDENING = 113             // 0x71 (StereoWideningAmount)
+        private const val DAP_PARAM_REVERB_REDUCTION_ENABLE = 114     // 0x72 (ReverbReductionEnable)
+        private const val DAP_PARAM_REVERB_REDUCTION_AMOUNT = 115     // 0x73 (ReverbReductionAmount)
+        private const val DAP_PARAM_VOLUME_LEVELER_AMOUNT = 116       // 0x74 (DolbyVolumeLevelerAmount)
 
         // Equalizer & AutoEQ Constants
         private const val KEY_EQUALIZER_ENABLED = "equalizer_enabled"
@@ -130,8 +138,9 @@ class AudioEffectManager(private val context: Context) {
 
     private var dolbyEffect: AudioEffect? = null
     private var miSoundEffect: AudioEffect? = null
-    private var virtualizer: Virtualizer? = null
-    private var equalizerEffect: Equalizer? = null
+
+    private val _isHeadphonesConnected = MutableStateFlow(isHeadphonesActive())
+    val isHeadphonesConnectedState: StateFlow<Boolean> = _isHeadphonesConnected.asStateFlow()
 
     private val _spatialAudioState by lazy { MutableStateFlow(isSpatialAudioEnabled()) }
     val spatialAudioState: StateFlow<Boolean> by lazy { _spatialAudioState.asStateFlow() }
@@ -225,21 +234,47 @@ class AudioEffectManager(private val context: Context) {
         }
     }
 
+    fun setSelectedTuningDevice(port: Int, device: String) {
+        try {
+            val devBytes = device.toByteArray(Charsets.UTF_8)
+            val buffer = ByteArray(devBytes.size + 4)
+            intToByteArray(port, buffer, 0)
+            System.arraycopy(devBytes, 0, buffer, 4, devBytes.size)
+            setAudioEffectParameter(dolbyEffect, EFFECT_PARAM_SELECTED_TUNING_DEVICE, buffer)
+            Log.d(TAG, "setSelectedTuningDevice: port=$port, device=$device")
+        } catch (e: Exception) {
+            Log.w(TAG, "Error in setSelectedTuningDevice", e)
+        }
+    }
+
+    fun updateTuningDevice() {
+        val outputs = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+        val btDevice = outputs.firstOrNull {
+            it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+            it.type == AudioDeviceInfo.TYPE_BLE_HEADSET ||
+            it.type == AudioDeviceInfo.TYPE_BLE_SPEAKER ||
+            it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
+        }
+        val wiredDevice = outputs.firstOrNull {
+            it.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
+            it.type == AudioDeviceInfo.TYPE_WIRED_HEADSET
+        }
+        val usbDevice = outputs.firstOrNull {
+            it.type == AudioDeviceInfo.TYPE_USB_HEADSET ||
+            it.type == AudioDeviceInfo.TYPE_USB_DEVICE
+        }
+
+        when {
+            btDevice != null -> setSelectedTuningDevice(4, "default_bluetooth")
+            wiredDevice != null -> setSelectedTuningDevice(3, "default_headphone")
+            usbDevice != null -> setSelectedTuningDevice(5, "default_usb")
+            else -> setSelectedTuningDevice(0, "default_internal_speaker")
+        }
+    }
+
     private fun initEffects() {
         dolbyEffect = createAudioEffect(UUID_DOLBY_DAP)
         miSoundEffect = createAudioEffect(UUID_MISOUND_FX)
-
-        try {
-            virtualizer = Virtualizer(0, 0)
-        } catch (e: Exception) {
-            Log.w(TAG, "Fallback Virtualizer not available", e)
-        }
-
-        try {
-            equalizerEffect = Equalizer(0, 0)
-        } catch (e: Exception) {
-            Log.w(TAG, "Fallback Equalizer not available", e)
-        }
 
         val mode = getEffectMode()
         applyEffectMode(mode)
@@ -256,18 +291,29 @@ class AudioEffectManager(private val context: Context) {
 
     fun getEffectMode(): EffectMode {
         val saved = prefs.getString(KEY_EFFECT_MODE, EffectMode.DOLBY.id)
-        return EffectMode.fromId(saved)
+        val mode = EffectMode.fromId(saved)
+        return if (mode == EffectMode.OFF && !isHeadphonesActive()) EffectMode.MISOUND else mode
     }
 
     fun setEffectMode(mode: EffectMode) {
-        prefs.edit().putString(KEY_EFFECT_MODE, mode.id).apply()
-        _effectModeState.value = mode
-        applyEffectMode(mode)
+        val effectiveMode = if (mode == EffectMode.OFF && !isHeadphonesActive()) {
+            EffectMode.MISOUND
+        } else {
+            mode
+        }
+        prefs.edit().putString(KEY_EFFECT_MODE, effectiveMode.id).apply()
+        _effectModeState.value = effectiveMode
+        applyEffectMode(effectiveMode)
     }
 
     private fun applyEffectMode(mode: EffectMode) {
-        Log.d(TAG, "applyEffectMode: $mode")
-        when (mode) {
+        val effectiveMode = if (mode == EffectMode.OFF && !isHeadphonesActive()) {
+            EffectMode.MISOUND
+        } else {
+            mode
+        }
+        Log.d(TAG, "applyEffectMode: $effectiveMode (requested: $mode)")
+        when (effectiveMode) {
             EffectMode.DOLBY -> {
                 // 1. Disable MiSound first
                 try {
@@ -277,19 +323,28 @@ class AudioEffectManager(private val context: Context) {
                     Log.w(TAG, "Error disabling MiSound", e)
                 }
 
-                // 2. Enable Dolby DAP internal DSP and effect
+                // 2. Set Audio HAL parameter for Dolby routing & DSP path
+                try {
+                    audioManager.setParameters("dolby_mode=true")
+                    audioManager.setParameters("effect_switch_fade=true")
+                } catch (e: Exception) {
+                    Log.w(TAG, "Error setting dolby_mode audio parameters", e)
+                }
+
+                // 3. Enable Dolby DAP internal DSP and effect
                 try {
                     setDolbyBoolParam(EFFECT_PARAM_EFFECT_ENABLE, true)
                     dolbyEffect?.enabled = true
                     applyDolbyProfile(getDolbyProfile())
+                    updateTuningDevice()
                 } catch (e: Exception) {
                     Log.w(TAG, "Error activating Dolby DAP", e)
                 }
 
-                // 3. Apply surround settings
+                // 4. Apply surround settings
                 applySurroundSound(isSurroundEnabled(), getSurroundStrength())
 
-                // 4. Update system settings & notify HAL
+                // 5. Update system settings & notify HAL
                 syncSystemSetting("dolby", isNone = false)
             }
             EffectMode.MISOUND -> {
@@ -301,7 +356,15 @@ class AudioEffectManager(private val context: Context) {
                     Log.w(TAG, "Error disabling Dolby", e)
                 }
 
-                // 2. Enable MiSound effect and set default mode
+                // 2. Set Audio HAL parameter for standard routing
+                try {
+                    audioManager.setParameters("dolby_mode=false")
+                    audioManager.setParameters("effect_switch_fade=true")
+                } catch (e: Exception) {
+                    Log.w(TAG, "Error setting dolby_mode=false", e)
+                }
+
+                // 3. Enable MiSound effect and set default mode
                 try {
                     miSoundEffect?.enabled = true
                     setMiSoundParameter(MISOUND_PARAM_MODE, 1)
@@ -309,20 +372,22 @@ class AudioEffectManager(private val context: Context) {
                     Log.w(TAG, "Error activating MiSound", e)
                 }
 
-                // 3. Apply surround settings
+                // 4. Apply surround settings
                 applySurroundSound(isSurroundEnabled(), getSurroundStrength())
 
-                // 4. Update system settings & notify HAL
+                // 5. Update system settings & notify HAL
                 syncSystemSetting("misound", isNone = false)
             }
             EffectMode.OFF -> {
-                // Disable both
+                // 1. Disable Dolby DAP
                 try {
                     setDolbyBoolParam(EFFECT_PARAM_EFFECT_ENABLE, false)
                     dolbyEffect?.enabled = false
                 } catch (e: Exception) {
                     Log.w(TAG, "Error disabling Dolby", e)
                 }
+
+                // 2. Disable MiSound
                 try {
                     setMiSoundParameter(MISOUND_PARAM_3D_SURROUND, 0)
                     miSoundEffect?.enabled = false
@@ -330,9 +395,18 @@ class AudioEffectManager(private val context: Context) {
                     Log.w(TAG, "Error disabling MiSound", e)
                 }
 
-                // Disable surround & spatial
+                // 3. Set Audio HAL parameter for standard routing
+                try {
+                    audioManager.setParameters("dolby_mode=false")
+                    audioManager.setParameters("effect_switch_fade=true")
+                } catch (e: Exception) {
+                    Log.w(TAG, "Error setting dolby_mode=false", e)
+                }
+
+                // 4. Disable surround & spatial
                 applySurroundSound(false, getSurroundStrength())
 
+                // 5. Update system settings & notify HAL
                 syncSystemSetting("none", isNone = true)
             }
         }
@@ -353,10 +427,17 @@ class AudioEffectManager(private val context: Context) {
         }
 
         try {
+            val userHandleAll = UserHandle::class.java.getField("ALL").get(null) as UserHandle
+            val sendMethod = context.javaClass.getMethod("sendBroadcastAsUser", Intent::class.java, UserHandle::class.java)
             val intent = Intent("miui.intent.action.ACTION_AUDIO_EFFECT_CHANGED")
-            context.sendBroadcast(intent)
+            sendMethod.invoke(context, intent, userHandleAll)
         } catch (e: Exception) {
-            Log.w(TAG, "Could not broadcast ACTION_AUDIO_EFFECT_CHANGED", e)
+            try {
+                val intent = Intent("miui.intent.action.ACTION_AUDIO_EFFECT_CHANGED")
+                context.sendBroadcast(intent)
+            } catch (ex: Exception) {
+                Log.w(TAG, "Could not broadcast ACTION_AUDIO_EFFECT_CHANGED", ex)
+            }
         }
     }
 
@@ -503,28 +584,22 @@ class AudioEffectManager(private val context: Context) {
     }
 
     private fun applySurroundSound(enabled: Boolean, strength: Int) {
-        Log.d(TAG, "applySurroundSound: enabled=$enabled, strength=$strength, mode=${getEffectMode()}")
         val mode = getEffectMode()
+        val isHeadphones = isHeadphonesActive()
+        Log.d(TAG, "applySurroundSound: enabled=$enabled, strength=$strength, mode=$mode, isHeadphones=$isHeadphones")
 
         when (mode) {
             EffectMode.DOLBY -> {
                 val profile = getDolbyProfile().id
                 try {
-                    val isHeadphones = isHeadphonesActive()
-                    // Never enable speaker virtualizer on phone speakers (hardware policy ro.vendor.audio.surround.headphone.only=true)
-                    // Phone speakers in close chassis proximity suffer anti-phase acoustic cancellation that destroys bass/mids.
-                    setDolbyProfileParam(profile, DAP_PARAM_SPEAKER_VIRTUALIZER, intArrayOf(0))
-                    setDolbyPortParam(profile, 0, DAP_PARAM_STEREO_WIDENING, intArrayOf(0))
-
                     if (isHeadphones) {
                         setDolbyProfileParam(profile, DAP_PARAM_HEADPHONE_VIRTUALIZER, intArrayOf(if (enabled) 1 else 0))
                         val widening = 4 + (strength * (160 - 4) / 1000)
-                        setDolbyPortParam(profile, 1, DAP_PARAM_STEREO_WIDENING, intArrayOf(if (enabled) widening else 0))
+                        setDolbyPortParam(profile, 3, DAP_PARAM_STEREO_WIDENING, intArrayOf(if (enabled) widening else 0))
                         Log.d(TAG, "Applied Dolby surround on headphones: enabled=$enabled, widening=$widening")
                     } else {
-                        setDolbyProfileParam(profile, DAP_PARAM_HEADPHONE_VIRTUALIZER, intArrayOf(0))
-                        setDolbyPortParam(profile, 1, DAP_PARAM_STEREO_WIDENING, intArrayOf(0))
-                        Log.d(TAG, "Applied Dolby surround on speaker: virtualizer disabled to preserve rich acoustics")
+                        // On built-in phone speakers, leave Dolby's native profile speaker tuning untouched
+                        Log.d(TAG, "Dolby on speaker: preserving native speaker tuning")
                     }
                 } catch (e: Exception) {
                     Log.w(TAG, "Error setting Dolby surround parameters", e)
@@ -542,18 +617,6 @@ class AudioEffectManager(private val context: Context) {
             EffectMode.OFF -> {
                 // Do nothing
             }
-        }
-
-        // Apply fallback standard Virtualizer if available
-        try {
-            virtualizer?.let {
-                if (it.strengthSupported) {
-                    it.setStrength(strength.toShort())
-                }
-                it.enabled = enabled
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Fallback Virtualizer error", e)
         }
     }
 
@@ -1045,10 +1108,13 @@ class AudioEffectManager(private val context: Context) {
     }
 
     private fun onDeviceSnapshotRestored(snapshot: AudioDeviceSnapshot) {
-        Log.d(TAG, "Restoring audio device snapshot: ${snapshot.displayName}")
+        val isHeadphones = isHeadphonesActive()
+        _isHeadphonesConnected.value = isHeadphones
+        Log.d(TAG, "Restoring audio device snapshot: ${snapshot.displayName} (isHeadphones=$isHeadphones)")
         _connectedDeviceState.value = snapshot.displayName
 
-        val mode = EffectMode.fromId(snapshot.effectMode)
+        val rawMode = EffectMode.fromId(snapshot.effectMode)
+        val mode = if (rawMode == EffectMode.OFF && !isHeadphones) EffectMode.MISOUND else rawMode
         val profile = DolbyProfile.fromId(snapshot.dolbyProfile)
 
         prefs.edit()
@@ -1143,6 +1209,7 @@ class AudioEffectManager(private val context: Context) {
 
         resetEqualizer()
         applyDolbyProfile(getDolbyProfile())
+        updateTuningDevice()
         saveCurrentStateToDevice()
     }
 
@@ -1186,44 +1253,32 @@ class AudioEffectManager(private val context: Context) {
 
         // 1. Dolby DAP Offload GEQ & Enhancers
         try {
-            // Dialogue Enhancer parameters (104, 105) - STANDALONE: independent of isEnabled
+            // Dialogue Enhancer parameters (105, 108) - STANDALONE: independent of isEnabled
             setDolbyProfileParam(profileId, DAP_PARAM_DIALOG_ENHANCER_ENABLE, intArrayOf(if (dialogueOn) 1 else 0))
             val dialogueAmount = (getDialogueEnhancerLevel() * 16 / 100).coerceIn(0, 16)
             setDolbyProfileParam(profileId, DAP_PARAM_DIALOG_ENHANCER_AMOUNT, intArrayOf(dialogueAmount))
 
-            // Volume Leveler parameters (112, 114) - STANDALONE: independent of isEnabled
+            // Volume Leveler parameters (103, 116) - STANDALONE: independent of isEnabled
             setDolbyProfileParam(profileId, DAP_PARAM_VOLUME_LEVELER_ENABLE, intArrayOf(if (volumeOn) 1 else 0))
             val volumeAmount = (getVolumeLevelerLevel() * 10 / 100).coerceIn(0, 10)
             setDolbyProfileParam(profileId, DAP_PARAM_VOLUME_LEVELER_AMOUNT, intArrayOf(volumeAmount))
 
-            // Bass Enhancer parameter (111) - ONLY active if user explicitly toggled bassOn
+            // Bass Enhancer parameters (111, 112) - ONLY active if user explicitly toggled bassOn
             setDolbyProfileParam(profileId, DAP_PARAM_BASS_ENHANCER_ENABLE, intArrayOf(if (bassOn) 1 else 0))
+            setDolbyProfileParam(profileId, DAP_PARAM_VIRTUAL_BASS_ENABLE, intArrayOf(if (bassOn) 1 else 0))
 
             val hasGeqAdjustment = isEnabled || bassOn || midOn || trebleOn || dialogueOn
             if (hasGeqAdjustment) {
+                // Enable Graphic Equalizer and apply computed band gains
+                setDolbyProfileParam(profileId, DAP_PARAM_GEQ_ENABLE, intArrayOf(1))
                 val dapGains = serialize10To20DapGains(computedBands)
                 setDolbyEqualizerGains(profileId, dapGains)
             } else {
-                setDolbyEqualizerGains(profileId, IntArray(20) { 0 })
+                // Disable Graphic Equalizer to keep factory acoustic optimizer & regulator intact
+                setDolbyProfileParam(profileId, DAP_PARAM_GEQ_ENABLE, intArrayOf(0))
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Error setting Dolby DAP GEQ gains", e)
-        }
-
-        // 2. Global Equalizer Effect (MiSound & AOSP Output)
-        try {
-            equalizerEffect?.let { eq ->
-                eq.enabled = isEnabled
-                if (isEnabled) {
-                    val numBands = eq.numberOfBands.toInt()
-                    for (i in 0 until minOf(computedBands.size, numBands)) {
-                        val millibels = (computedBands[i] * 100).toInt().coerceIn(-1500, 1500).toShort()
-                        eq.setBandLevel(i.toShort(), millibels)
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Error applying fallback Equalizer effect", e)
+            Log.w(TAG, "Error setting Dolby DAP GEQ & enhancers", e)
         }
 
         saveCurrentStateToDevice()
@@ -1265,8 +1320,6 @@ class AudioEffectManager(private val context: Context) {
         try {
             dolbyEffect?.release()
             miSoundEffect?.release()
-            virtualizer?.release()
-            equalizerEffect?.release()
         } catch (e: Exception) {
             Log.w(TAG, "Error releasing audio effects", e)
         }

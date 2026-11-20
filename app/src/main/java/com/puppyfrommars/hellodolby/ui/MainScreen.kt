@@ -233,6 +233,7 @@ fun MainScreen(
 fun EffectsTab(audioManager: AudioEffectManager, padding: PaddingValues) {
     val coroutineScope = rememberCoroutineScope()
     val effectMode by audioManager.effectModeState.collectAsState()
+    val isHeadphonesConnected by audioManager.isHeadphonesConnectedState.collectAsState()
     var dolbyProfile by remember { mutableStateOf(audioManager.getDolbyProfile()) }
     val spatialEnabled by audioManager.spatialAudioState.collectAsState()
     var surroundStrength by remember { mutableFloatStateOf(audioManager.getSurroundStrength() / 10f) }
@@ -293,17 +294,18 @@ fun EffectsTab(audioManager: AudioEffectManager, padding: PaddingValues) {
                 },
                 label = "EngineBannerTransition"
             ) { mode ->
-                val bannerDrawable = when (mode) {
+                val displayMode = if (mode == EffectMode.OFF && !isHeadphonesConnected) EffectMode.MISOUND else mode
+                val bannerDrawable = when (displayMode) {
                     EffectMode.DOLBY -> R.drawable.banner_engine_dolby
                     EffectMode.MISOUND -> R.drawable.banner_engine_misound
                     EffectMode.OFF -> R.drawable.banner_engine_off
                 }
-                val title = when (mode) {
+                val title = when (displayMode) {
                     EffectMode.DOLBY -> stringResource(R.string.engine_banner_dolby_title)
                     EffectMode.MISOUND -> stringResource(R.string.engine_banner_misound_title)
                     EffectMode.OFF -> stringResource(R.string.engine_banner_off_title)
                 }
-                val subtitle = when (mode) {
+                val subtitle = when (displayMode) {
                     EffectMode.DOLBY -> stringResource(R.string.engine_banner_dolby_sub)
                     EffectMode.MISOUND -> stringResource(R.string.engine_banner_misound_sub)
                     EffectMode.OFF -> stringResource(R.string.engine_banner_off_sub)
@@ -337,7 +339,7 @@ fun EffectsTab(audioManager: AudioEffectManager, padding: PaddingValues) {
                             .padding(14.dp)
                             .clip(RoundedCornerShape(8.dp))
                             .background(
-                                when (mode) {
+                                when (displayMode) {
                                     EffectMode.DOLBY -> Color(0xFF00C853).copy(alpha = 0.9f)
                                     EffectMode.MISOUND -> Color(0xFFFFB300).copy(alpha = 0.9f)
                                     EffectMode.OFF -> Color(0xFF757575).copy(alpha = 0.9f)
@@ -408,14 +410,16 @@ fun EffectsTab(audioManager: AudioEffectManager, padding: PaddingValues) {
                     audioManager.setEffectMode(EffectMode.MISOUND)
                 }
             )
-            RadioButtonPreference(
-                title = stringResource(R.string.effect_off),
-                summary = stringResource(R.string.effect_off_summary),
-                selected = effectMode == EffectMode.OFF,
-                onClick = {
-                    audioManager.setEffectMode(EffectMode.OFF)
-                }
-            )
+            if (isHeadphonesConnected) {
+                RadioButtonPreference(
+                    title = stringResource(R.string.effect_off),
+                    summary = stringResource(R.string.effect_off_summary),
+                    selected = effectMode == EffectMode.OFF,
+                    onClick = {
+                        audioManager.setEffectMode(EffectMode.OFF)
+                    }
+                )
+            }
         }
 
         // Section 2: Dolby Audio Presets with Spotlight Carousel & Full Profile List
