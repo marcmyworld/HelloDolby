@@ -118,17 +118,6 @@ fun EqualizerScreen(
     val customPresets by audioManager.customPresetsState.collectAsState()
     val autoEqProfileName by audioManager.autoEqProfileNameState.collectAsState()
 
-    val bassEnhancerEnabled by audioManager.bassEnhancerEnabledState.collectAsState()
-    val bassEnhancerLevel by audioManager.bassEnhancerLevelState.collectAsState()
-    val midEnhancerEnabled by audioManager.midEnhancerEnabledState.collectAsState()
-    val midEnhancerLevel by audioManager.midEnhancerLevelState.collectAsState()
-    val trebleEnhancerEnabled by audioManager.trebleEnhancerEnabledState.collectAsState()
-    val trebleEnhancerLevel by audioManager.trebleEnhancerLevelState.collectAsState()
-    val volumeLevelerEnabled by audioManager.volumeLevelerEnabledState.collectAsState()
-    val volumeLevelerLevel by audioManager.volumeLevelerLevelState.collectAsState()
-    val dialogueEnhancerEnabled by audioManager.dialogueEnhancerEnabledState.collectAsState()
-    val dialogueEnhancerLevel by audioManager.dialogueEnhancerLevelState.collectAsState()
-
     val isDolbyActive = effectMode == EffectMode.DOLBY
     val isInteractive = equalizerEnabled && isDolbyActive
 
@@ -587,116 +576,6 @@ fun EqualizerScreen(
                             enabled = isInteractive
                         )
                     }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // Audio Enhancers Section (Bass, Mid, Treble, Dialogue, Volume Leveler)
-            Text(
-                text = stringResource(R.string.category_enhancers),
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                modifier = Modifier.padding(start = 12.dp, top = 4.dp, bottom = 6.dp)
-            )
-
-            Card(
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                // Bass Enhancer
-                SwitchPreference(
-                    title = stringResource(R.string.bass_enhancer),
-                    summary = stringResource(R.string.bass_enhancer_summary),
-                    checked = bassEnhancerEnabled,
-                    onCheckedChange = { audioManager.setBassEnhancerEnabled(it) },
-                    enabled = isInteractive
-                )
-                if (bassEnhancerEnabled) {
-                    SliderPreference(
-                        title = "Bass Boost Intensity",
-                        summary = "$bassEnhancerLevel%",
-                        value = bassEnhancerLevel.toFloat(),
-                        onValueChange = { audioManager.setBassEnhancerLevel(it.toInt()) },
-                        valueRange = 0f..100f,
-                        enabled = isInteractive
-                    )
-                }
-
-                // Mid Enhancer
-                SwitchPreference(
-                    title = stringResource(R.string.mid_enhancer),
-                    summary = stringResource(R.string.mid_enhancer_summary),
-                    checked = midEnhancerEnabled,
-                    onCheckedChange = { audioManager.setMidEnhancerEnabled(it) },
-                    enabled = isInteractive
-                )
-                if (midEnhancerEnabled) {
-                    SliderPreference(
-                        title = "Mid Presence Intensity",
-                        summary = "$midEnhancerLevel%",
-                        value = midEnhancerLevel.toFloat(),
-                        onValueChange = { audioManager.setMidEnhancerLevel(it.toInt()) },
-                        valueRange = 0f..100f,
-                        enabled = isInteractive
-                    )
-                }
-
-                // Treble Enhancer
-                SwitchPreference(
-                    title = stringResource(R.string.treble_enhancer),
-                    summary = stringResource(R.string.treble_enhancer_summary),
-                    checked = trebleEnhancerEnabled,
-                    onCheckedChange = { audioManager.setTrebleEnhancerEnabled(it) },
-                    enabled = isInteractive
-                )
-                if (trebleEnhancerEnabled) {
-                    SliderPreference(
-                        title = "Treble Air & Sparkle",
-                        summary = "$trebleEnhancerLevel%",
-                        value = trebleEnhancerLevel.toFloat(),
-                        onValueChange = { audioManager.setTrebleEnhancerLevel(it.toInt()) },
-                        valueRange = 0f..100f,
-                        enabled = isInteractive
-                    )
-                }
-
-                // Dialogue Enhancer
-                SwitchPreference(
-                    title = stringResource(R.string.dialogue_enhancer),
-                    summary = stringResource(R.string.dialogue_enhancer_summary),
-                    checked = dialogueEnhancerEnabled,
-                    onCheckedChange = { audioManager.setDialogueEnhancerEnabled(it) },
-                    enabled = isInteractive
-                )
-                if (dialogueEnhancerEnabled) {
-                    SliderPreference(
-                        title = "Dialogue Intelligibility",
-                        summary = "$dialogueEnhancerLevel%",
-                        value = dialogueEnhancerLevel.toFloat(),
-                        onValueChange = { audioManager.setDialogueEnhancerLevel(it.toInt()) },
-                        valueRange = 0f..100f,
-                        enabled = isInteractive
-                    )
-                }
-
-                // Volume Leveler
-                SwitchPreference(
-                    title = stringResource(R.string.volume_leveler),
-                    summary = stringResource(R.string.volume_leveler_summary),
-                    checked = volumeLevelerEnabled,
-                    onCheckedChange = { audioManager.setVolumeLevelerEnabled(it) },
-                    enabled = isInteractive
-                )
-                if (volumeLevelerEnabled) {
-                    SliderPreference(
-                        title = "Leveling Dynamic Range",
-                        summary = "$volumeLevelerLevel%",
-                        value = volumeLevelerLevel.toFloat(),
-                        onValueChange = { audioManager.setVolumeLevelerLevel(it.toInt()) },
-                        valueRange = 0f..100f,
-                        enabled = isInteractive
-                    )
                 }
             }
 

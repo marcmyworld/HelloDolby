@@ -22,7 +22,7 @@ class DolbyTileService : TileService() {
         get() = try {
             HelloDolbyApp.instance.audioEffectManager
         } catch (e: Exception) {
-            AudioEffectManager(applicationContext)
+            AudioEffectManager.getInstance(applicationContext)
         }
 
     override fun onStartListening() {

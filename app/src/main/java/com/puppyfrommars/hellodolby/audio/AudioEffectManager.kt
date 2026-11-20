@@ -7,6 +7,8 @@ import android.media.Spatializer
 import android.media.audiofx.AudioEffect
 import android.media.audiofx.Equalizer
 import android.media.audiofx.Virtualizer
+import android.os.IBinder
+import android.os.Parcel
 import android.os.UserHandle
 import android.provider.Settings
 import android.util.Log
@@ -108,6 +110,15 @@ class AudioEffectManager(private val context: Context) {
         // MiSound Parameter IDs
         private const val MISOUND_PARAM_MODE = 0
         private const val MISOUND_PARAM_3D_SURROUND = 20 // 0x14
+
+        @Volatile
+        private var instance: AudioEffectManager? = null
+
+        fun getInstance(context: Context): AudioEffectManager {
+            return instance ?: synchronized(this) {
+                instance ?: AudioEffectManager(context.applicationContext).also { instance = it }
+            }
+        }
     }
 
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -234,6 +245,7 @@ class AudioEffectManager(private val context: Context) {
         applySurroundSound(surroundEnabled, surroundStrength)
 
         applyEqualizerSettings()
+        verifyDolbyCommunication()
     }
 
     // --- Audio Processing Engine ---
@@ -585,6 +597,7 @@ class AudioEffectManager(private val context: Context) {
     private fun setAudioEffectParameter(effect: AudioEffect?, param: Int, value: ByteArray) {
         if (effect == null) return
         try {
+            val hasCtrl = try { effect.hasControl() } catch (e: Exception) { false }
             val paramBytes = ByteArray(4)
             intToByteArray(param, paramBytes, 0)
             val method = AudioEffect::class.java.getMethod(
@@ -595,9 +608,9 @@ class AudioEffectManager(private val context: Context) {
             method.isAccessible = true
             val status = method.invoke(effect, paramBytes, value) as Int
             if (status != AudioEffect.SUCCESS) {
-                Log.w(TAG, "setParameter($param) returned status $status")
+                Log.w(TAG, "setParameter($param) returned status $status [hasControl=$hasCtrl]")
             } else {
-                Log.d(TAG, "setParameter($param) SUCCESS")
+                Log.d(TAG, "setParameter($param) SUCCESS [hasControl=$hasCtrl]")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed setAudioEffectParameter($param)", e)
@@ -621,11 +634,124 @@ class AudioEffectManager(private val context: Context) {
                 Int::class.javaPrimitiveType
             )
             constructor.isAccessible = true
-            constructor.newInstance(EFFECT_TYPE_NULL, uuid, 0, 0) as AudioEffect
+            constructor.newInstance(EFFECT_TYPE_NULL, uuid, 1000, 0) as AudioEffect
         } catch (e: Exception) {
             Log.w(TAG, "Failed to instantiate AudioEffect for UUID: $uuid", e)
             null
         }
+    }
+
+    fun getDmsService(): IBinder? {
+        return try {
+            val smClass = Class.forName("android.os.ServiceManager")
+            val getServiceMethod = smClass.getMethod("getService", String::class.java)
+            getServiceMethod.invoke(null, "vendor.dolby.dms.IDms/default") as? IBinder
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not get vendor.dolby.dms.IDms/default", e)
+            null
+        }
+    }
+
+    fun sendDmsCommand(commandId: Int, inData: ByteArray): Boolean {
+        val binder = getDmsService() ?: return false
+        val data = Parcel.obtain()
+        val reply = Parcel.obtain()
+        return try {
+            data.writeInterfaceToken("vendor.dolby.dms.IDms")
+            data.writeInt(commandId)
+            data.writeByteArray(inData)
+            val ok = binder.transact(1, data, reply, 0)
+            reply.readException()
+            ok
+        } catch (e: Exception) {
+            Log.e(TAG, "sendDmsCommand(0x${Integer.toHexString(commandId)}) failed", e)
+            false
+        } finally {
+            data.recycle()
+            reply.recycle()
+        }
+    }
+
+    fun handleDmsRequest(requestId: Int, inData: ByteArray = ByteArray(0)): ByteArray? {
+        val binder = getDmsService() ?: return null
+        val data = Parcel.obtain()
+        val reply = Parcel.obtain()
+        return try {
+            data.writeInterfaceToken("vendor.dolby.dms.IDms")
+            data.writeInt(requestId)
+            data.writeByteArray(inData)
+            binder.transact(2, data, reply, 0)
+            reply.readException()
+            reply.createByteArray()
+        } catch (e: Exception) {
+            Log.e(TAG, "handleDmsRequest(0x${Integer.toHexString(requestId)}) failed", e)
+            null
+        } finally {
+            data.recycle()
+            reply.recycle()
+        }
+    }
+
+    fun verifyDolbyCommunication(): String {
+        val sb = StringBuilder()
+        sb.append("\n=======================================================\n")
+        sb.append("=== HelloDolby -> Dolby AIDL HAL Diagnostic Report ===\n")
+        sb.append("=======================================================\n")
+
+        // 1. AudioEffect AIDL Effect (libhwdapaidl.so / DAP_offload)
+        val effect = dolbyEffect
+        if (effect != null) {
+            val hasCtrl = try { effect.hasControl() } catch (e: Exception) { false }
+            val id = try { effect.id } catch (e: Exception) { -1 }
+            val enabled = try { effect.enabled } catch (e: Exception) { false }
+            sb.append("1. AudioEffect AIDL (DAP_offload): INSTANTIATED\n")
+            sb.append("   - Effect ID: $id\n")
+            sb.append("   - Has Control: $hasCtrl\n")
+            sb.append("   - Enabled: $enabled\n")
+        } else {
+            sb.append("1. AudioEffect AIDL (DAP_offload): NOT INSTANTIATED (null)\n")
+        }
+
+        // 2. Direct AIDL HAL Service (vendor.dolby.dms.IDms/default)
+        val binder = getDmsService()
+        if (binder != null) {
+            val ping = binder.pingBinder()
+            val desc = binder.interfaceDescriptor
+            sb.append("2. AIDL Service (vendor.dolby.dms.IDms/default): CONNECTED\n")
+            sb.append("   - Ping: $ping\n")
+            sb.append("   - Interface Descriptor: $desc\n")
+
+            // Test Transaction 16777215 (getInterfaceVersion)
+            val data = Parcel.obtain()
+            val reply = Parcel.obtain()
+            try {
+                data.writeInterfaceToken("vendor.dolby.dms.IDms")
+                val ok = binder.transact(16777215, data, reply, 0)
+                reply.readException()
+                val version = reply.readInt()
+                sb.append("   - getInterfaceVersion(): SUCCESS (AIDL Version = $version, transactOk = $ok)\n")
+            } catch (e: Exception) {
+                sb.append("   - getInterfaceVersion(): FAILED (${e.javaClass.simpleName}: ${e.message})\n")
+            } finally {
+                data.recycle()
+                reply.recycle()
+            }
+
+            // Test Transaction 2 (handleRequest: GADV = 0x47414456 Get Active Device)
+            try {
+                val outBytes = handleDmsRequest(0x47414456)
+                sb.append("   - handleRequest(GADV): SUCCESS (Received ${outBytes?.size ?: 0} bytes)\n")
+            } catch (e: Exception) {
+                sb.append("   - handleRequest(GADV): FAILED (${e.javaClass.simpleName}: ${e.message})\n")
+            }
+        } else {
+            sb.append("2. AIDL Service (vendor.dolby.dms.IDms/default): BINDER NULL (SELinux or service unavailable)\n")
+        }
+        sb.append("=======================================================")
+
+        val report = sb.toString()
+        Log.i(TAG, report)
+        return report
     }
 
     private fun executeRootCommand(command: String): Int {

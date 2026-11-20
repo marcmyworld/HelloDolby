@@ -10,7 +10,7 @@ class HelloDolbyApp : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
-        audioEffectManager = AudioEffectManager(this)
+        audioEffectManager = AudioEffectManager.getInstance(this)
     }
 
     companion object {

@@ -167,8 +167,16 @@ fun ContributorsScreen(
             )
             ArrowPreference(
                 title = stringResource(R.string.device_info_label),
-                summary = stringResource(R.string.device_info_value),
+                summary = "${android.os.Build.MANUFACTURER.replaceFirstChar { it.uppercase() }} ${android.os.Build.MODEL} (${android.os.Build.DEVICE})",
                 onClick = {}
+            )
+            ArrowPreference(
+                title = stringResource(R.string.github_repo_label),
+                summary = "https://github.com/marcmyworld/HelloDolby",
+                onClick = {
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/marcmyworld/HelloDolby"))
+                    context.startActivity(intent)
+                }
             )
             ArrowPreference(
                 title = stringResource(R.string.design_system_label),

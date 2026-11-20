@@ -90,8 +90,9 @@
     <string name="app_version_value">1.0 (Stable)</string>
     <string name="license_label">License</string>
     <string name="license_value">Apache-2.0</string>
-    <string name="device_info_label">Target Device</string>
-    <string name="device_info_value">Xiaomi 17 (pudding / SM8850)</string>
+    <string name="device_info_label">Connected Device</string>
+    <string name="device_info_value">Android AIDL Audio Effect Device</string>
+    <string name="github_repo_label">GitHub Repository</string>
     <string name="design_system_label">Design System</string>
     <string name="design_system_value">Miuix</string>
     <string name="equalizer_dolby_required_warning">Dolby Atmos needs to be enabled in Effects to configure and use the Equalizer.</string>

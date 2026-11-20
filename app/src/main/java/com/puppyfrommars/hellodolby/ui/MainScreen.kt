@@ -20,6 +20,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -236,6 +237,13 @@ fun EffectsTab(audioManager: AudioEffectManager, padding: PaddingValues) {
     val spatialEnabled by audioManager.spatialAudioState.collectAsState()
     var surroundEnabled by remember { mutableStateOf(audioManager.isSurroundEnabled()) }
     var surroundStrength by remember { mutableFloatStateOf(audioManager.getSurroundStrength() / 10f) }
+
+    val bassEnhancerEnabled by audioManager.bassEnhancerEnabledState.collectAsState()
+    val bassEnhancerLevel by audioManager.bassEnhancerLevelState.collectAsState()
+    val dialogueEnhancerEnabled by audioManager.dialogueEnhancerEnabledState.collectAsState()
+    val dialogueEnhancerLevel by audioManager.dialogueEnhancerLevelState.collectAsState()
+    val volumeLevelerEnabled by audioManager.volumeLevelerEnabledState.collectAsState()
+    val volumeLevelerLevel by audioManager.volumeLevelerLevelState.collectAsState()
 
     val initialPageIndex = DOLBY_PRESET_BANNERS.indexOfFirst { it.profile == dolbyProfile }.coerceAtLeast(0)
     val pagerState = rememberPagerState(
@@ -524,108 +532,115 @@ fun EffectsTab(audioManager: AudioEffectManager, padding: PaddingValues) {
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
-            // 2-Column Preset Grid without tick space on the left
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+            // Sleek 1-Tap Preset Filter Chips Row
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                val chunkedPresets = DOLBY_PRESET_BANNERS.chunked(2)
-                chunkedPresets.forEach { rowPresets ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        rowPresets.forEach { banner ->
-                            val targetIndex = DOLBY_PRESET_BANNERS.indexOf(banner)
-                            val isSelected = dolbyProfile == banner.profile
-                            val animatedBgColor by animateColorAsState(
-                                targetValue = if (isSelected) {
-                                    MiuixTheme.colorScheme.primary.copy(alpha = 0.12f)
-                                } else {
-                                    MiuixTheme.colorScheme.surfaceContainerHigh
-                                },
-                                animationSpec = tween(220),
-                                label = "PresetGridBg_${banner.profile.name}"
-                            )
-                            val animatedBorderColor by animateColorAsState(
-                                targetValue = if (isSelected) {
-                                    MiuixTheme.colorScheme.primary
-                                } else {
-                                    MiuixTheme.colorScheme.outline.copy(alpha = 0.10f)
-                                },
-                                animationSpec = tween(220),
-                                label = "PresetGridBorder_${banner.profile.name}"
-                            )
+                DOLBY_PRESET_BANNERS.forEachIndexed { index, banner ->
+                    val isSelected = dolbyProfile == banner.profile
+                    val chipBg by animateColorAsState(
+                        targetValue = if (isSelected) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.surfaceContainerHigh,
+                        animationSpec = tween(200),
+                        label = "ChipBg_${banner.profile.name}"
+                    )
+                    val chipTextColor by animateColorAsState(
+                        targetValue = if (isSelected) MiuixTheme.colorScheme.onPrimary else MiuixTheme.colorScheme.onSurface,
+                        animationSpec = tween(200),
+                        label = "ChipText_${banner.profile.name}"
+                    )
 
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .defaultMinSize(minHeight = 64.dp)
-                                    .clip(RoundedCornerShape(16.dp))
-                                    .background(animatedBgColor)
-                                    .border(
-                                        width = if (isSelected) 1.8.dp else 1.dp,
-                                        color = animatedBorderColor,
-                                        shape = RoundedCornerShape(16.dp)
-                                    )
-                                    .clickable {
-                                        coroutineScope.launch {
-                                            pagerState.animateScrollToPage(targetIndex)
-                                        }
-                                        dolbyProfile = banner.profile
-                                        audioManager.setDolbyProfile(banner.profile)
-                                    }
-                                    .padding(horizontal = 14.dp, vertical = 12.dp)
-                            ) {
-                                Column(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalArrangement = Arrangement.Center
-                                ) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = stringResource(banner.titleRes),
-                                            fontSize = 15.sp,
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
-                                            color = if (isSelected) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurface,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            modifier = Modifier.weight(1f, fill = false)
-                                        )
-                                        if (isSelected) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(18.dp)
-                                                    .clip(CircleShape)
-                                                    .background(MiuixTheme.colorScheme.primary),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Icon(
-                                                    imageVector = MiuixIcons.Ok,
-                                                    contentDescription = "Selected",
-                                                    tint = MiuixTheme.colorScheme.onPrimary,
-                                                    modifier = Modifier.size(12.dp)
-                                                )
-                                            }
-                                        }
-                                    }
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    Text(
-                                        text = stringResource(banner.subRes),
-                                        fontSize = 11.sp,
-                                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(chipBg)
+                            .clickable {
+                                coroutineScope.launch {
+                                    pagerState.animateScrollToPage(index)
                                 }
+                                dolbyProfile = banner.profile
+                                audioManager.setDolbyProfile(banner.profile)
                             }
-                        }
+                            .padding(horizontal = 16.dp, vertical = 9.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = stringResource(banner.titleRes),
+                            fontSize = 13.5.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                            color = chipTextColor
+                        )
                     }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Standalone Audio Enhancers Section (Direct Dolby DAP Hardware DSP)
+            Text(
+                text = stringResource(R.string.category_enhancers),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                modifier = Modifier.padding(start = 12.dp, top = 4.dp, bottom = 8.dp)
+            )
+
+            Card(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                // Dialogue Enhancer
+                SwitchPreference(
+                    title = stringResource(R.string.dialogue_enhancer),
+                    summary = stringResource(R.string.dialogue_enhancer_summary),
+                    checked = dialogueEnhancerEnabled,
+                    onCheckedChange = { audioManager.setDialogueEnhancerEnabled(it) }
+                )
+                if (dialogueEnhancerEnabled) {
+                    SliderPreference(
+                        title = "Dialogue Intelligibility",
+                        summary = "$dialogueEnhancerLevel%",
+                        value = dialogueEnhancerLevel.toFloat(),
+                        onValueChange = { audioManager.setDialogueEnhancerLevel(it.toInt()) },
+                        valueRange = 0f..100f
+                    )
+                }
+
+                // Volume Leveler
+                SwitchPreference(
+                    title = stringResource(R.string.volume_leveler),
+                    summary = stringResource(R.string.volume_leveler_summary),
+                    checked = volumeLevelerEnabled,
+                    onCheckedChange = { audioManager.setVolumeLevelerEnabled(it) }
+                )
+                if (volumeLevelerEnabled) {
+                    SliderPreference(
+                        title = "Leveling Dynamic Range",
+                        summary = "$volumeLevelerLevel%",
+                        value = volumeLevelerLevel.toFloat(),
+                        onValueChange = { audioManager.setVolumeLevelerLevel(it.toInt()) },
+                        valueRange = 0f..100f
+                    )
+                }
+
+                // Bass Enhancer
+                SwitchPreference(
+                    title = stringResource(R.string.bass_enhancer),
+                    summary = stringResource(R.string.bass_enhancer_summary),
+                    checked = bassEnhancerEnabled,
+                    onCheckedChange = { audioManager.setBassEnhancerEnabled(it) }
+                )
+                if (bassEnhancerEnabled) {
+                    SliderPreference(
+                        title = "Bass Boost Intensity",
+                        summary = "$bassEnhancerLevel%",
+                        value = bassEnhancerLevel.toFloat(),
+                        onValueChange = { audioManager.setBassEnhancerLevel(it.toInt()) },
+                        valueRange = 0f..100f
+                    )
                 }
             }
         }

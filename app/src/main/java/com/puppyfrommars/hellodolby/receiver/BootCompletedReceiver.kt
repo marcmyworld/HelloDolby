@@ -22,7 +22,7 @@ class BootCompletedReceiver : BroadcastReceiver() {
         if (action == Intent.ACTION_BOOT_COMPLETED || action == Intent.ACTION_LOCKED_BOOT_COMPLETED) {
             try {
                 // Instantiating AudioEffectManager applies the saved active device state to DSP
-                val manager = AudioEffectManager(context.applicationContext)
+                val manager = AudioEffectManager.getInstance(context.applicationContext)
                 Log.d(TAG, "HelloDolby restored audio DSP configuration on boot successfully")
             } catch (e: Exception) {
                 Log.e(TAG, "Error restoring HelloDolby on boot", e)
