@@ -12,6 +12,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.xiaomi.hellodolby.R
 import com.xiaomi.hellodolby.audio.AudioEffectManager
+import com.xiaomi.hellodolby.audio.DolbyProfile
 import com.xiaomi.hellodolby.audio.EffectMode
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Scaffold
@@ -24,9 +25,10 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 @Composable
 fun MainScreen(audioManager: AudioEffectManager) {
     var effectMode by remember { mutableStateOf(audioManager.getEffectMode()) }
-    var spatialEnabled by remember { mutableStateOf(audioManager.isSpatialAudioEnabled()) }
-    var virtualizerEnabled by remember { mutableStateOf(audioManager.isVirtualizerEnabled()) }
-    var virtualizerStrength by remember { mutableFloatStateOf(audioManager.getVirtualizerStrength() / 10f) }
+    var dolbyProfile by remember { mutableStateOf(audioManager.getDolbyProfile()) }
+    val spatialEnabled by audioManager.spatialAudioState.collectAsState()
+    var surroundEnabled by remember { mutableStateOf(audioManager.isSurroundEnabled()) }
+    var surroundStrength by remember { mutableFloatStateOf(audioManager.getSurroundStrength() / 10f) }
 
     val scrollState = rememberScrollState()
 
@@ -85,9 +87,63 @@ fun MainScreen(audioManager: AudioEffectManager) {
                 )
             }
 
+            // Section 2: Dolby Audio Presets (visible when Dolby is active)
+            if (effectMode == EffectMode.DOLBY) {
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text(
+                    text = stringResource(R.string.category_dolby_preset),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    modifier = Modifier.padding(start = 12.dp, top = 8.dp, bottom = 8.dp)
+                )
+
+                Card(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    RadioButtonPreference(
+                        title = stringResource(R.string.profile_dynamic),
+                        summary = stringResource(R.string.profile_dynamic_summary),
+                        selected = dolbyProfile == DolbyProfile.DYNAMIC,
+                        onClick = {
+                            dolbyProfile = DolbyProfile.DYNAMIC
+                            audioManager.setDolbyProfile(DolbyProfile.DYNAMIC)
+                        }
+                    )
+                    RadioButtonPreference(
+                        title = stringResource(R.string.profile_movie),
+                        summary = stringResource(R.string.profile_movie_summary),
+                        selected = dolbyProfile == DolbyProfile.MOVIE,
+                        onClick = {
+                            dolbyProfile = DolbyProfile.MOVIE
+                            audioManager.setDolbyProfile(DolbyProfile.MOVIE)
+                        }
+                    )
+                    RadioButtonPreference(
+                        title = stringResource(R.string.profile_music),
+                        summary = stringResource(R.string.profile_music_summary),
+                        selected = dolbyProfile == DolbyProfile.MUSIC,
+                        onClick = {
+                            dolbyProfile = DolbyProfile.MUSIC
+                            audioManager.setDolbyProfile(DolbyProfile.MUSIC)
+                        }
+                    )
+                    RadioButtonPreference(
+                        title = stringResource(R.string.profile_voice),
+                        summary = stringResource(R.string.profile_voice_summary),
+                        selected = dolbyProfile == DolbyProfile.VOICE,
+                        onClick = {
+                            dolbyProfile = DolbyProfile.VOICE
+                            audioManager.setDolbyProfile(DolbyProfile.VOICE)
+                        }
+                    )
+                }
+            }
+
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Section 2: Spatial & Virtualizer Options
+            // Section 3: Spatial & Surround Sound Options
             Text(
                 text = stringResource(R.string.category_spatial),
                 fontSize = 14.sp,
@@ -105,7 +161,6 @@ fun MainScreen(audioManager: AudioEffectManager) {
                     summary = stringResource(R.string.immersive_sound_summary),
                     checked = spatialEnabled,
                     onCheckedChange = { checked ->
-                        spatialEnabled = checked
                         audioManager.setSpatialAudioEnabled(checked)
                     }
                 )
@@ -114,21 +169,21 @@ fun MainScreen(audioManager: AudioEffectManager) {
                 SwitchPreference(
                     title = stringResource(R.string.virtualizer),
                     summary = stringResource(R.string.virtualizer_summary),
-                    checked = virtualizerEnabled,
+                    checked = surroundEnabled,
                     onCheckedChange = { checked ->
-                        virtualizerEnabled = checked
-                        audioManager.setVirtualizerEnabled(checked)
+                        surroundEnabled = checked
+                        audioManager.setSurroundEnabled(checked)
                     }
                 )
 
-                if (virtualizerEnabled) {
+                if (surroundEnabled) {
                     SliderPreference(
                         title = stringResource(R.string.virtualizer_intensity),
-                        summary = "${virtualizerStrength.toInt()}%",
-                        value = virtualizerStrength,
+                        summary = "${surroundStrength.toInt()}%",
+                        value = surroundStrength,
                         onValueChange = { newVal ->
-                            virtualizerStrength = newVal
-                            audioManager.setVirtualizerStrength((newVal * 10).toInt())
+                            surroundStrength = newVal
+                            audioManager.setSurroundStrength((newVal * 10).toInt())
                         },
                         valueRange = 0f..100f
                     )

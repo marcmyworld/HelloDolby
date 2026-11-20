@@ -8,6 +8,15 @@
     <string name="effect_off">Off</string>
     <string name="effect_off_summary">Direct DAC output without additional audio enhancement processing</string>
     <string name="category_processing">Audio Processing Engine</string>
+    <string name="category_dolby_preset">Dolby Audio Preset</string>
+    <string name="profile_dynamic">Dynamic</string>
+    <string name="profile_dynamic_summary">Automatically optimizes audio according to the content</string>
+    <string name="profile_movie">Movie</string>
+    <string name="profile_movie_summary">Delivers authentic surround sound and clearer dialogue</string>
+    <string name="profile_music">Music</string>
+    <string name="profile_music_summary">Fuller, more nuanced sound with rich acoustic balance</string>
+    <string name="profile_voice">Voice</string>
+    <string name="profile_voice_summary">Crisp vocal and dialogue enhancement for speech</string>
     <string name="category_spatial">Spatial &amp; Surround Sound</string>
     <string name="immersive_sound">Immersive sound</string>
     <string name="immersive_sound_summary">Spatial audio experience for supported multi-channel content</string>
