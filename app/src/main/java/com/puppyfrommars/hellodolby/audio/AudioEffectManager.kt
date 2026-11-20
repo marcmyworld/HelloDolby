@@ -2,6 +2,7 @@ package com.puppyfrommars.hellodolby.audio
 
 import android.content.Context
 import android.content.Intent
+import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.media.Spatializer
 import android.media.audiofx.AudioEffect
@@ -51,6 +52,7 @@ class AudioEffectManager(private val context: Context) {
         private const val KEY_EFFECT_MODE = "effect_mode"
         private const val KEY_DOLBY_PROFILE = "dolby_profile"
         private const val KEY_SURROUND_ENABLED = "surround_enabled"
+        private const val KEY_SPATIAL_AUDIO_ENABLED = "spatial_audio_enabled"
         private const val KEY_SURROUND_STRENGTH = "surround_strength"
 
         // AudioEffect AIDL UUIDs from vendor audio_effects_config.xml
@@ -131,8 +133,8 @@ class AudioEffectManager(private val context: Context) {
     private var virtualizer: Virtualizer? = null
     private var equalizerEffect: Equalizer? = null
 
-    private val _spatialAudioState = MutableStateFlow(spatializer.isEnabled)
-    val spatialAudioState: StateFlow<Boolean> = _spatialAudioState.asStateFlow()
+    private val _spatialAudioState by lazy { MutableStateFlow(isSpatialAudioEnabled()) }
+    val spatialAudioState: StateFlow<Boolean> by lazy { _spatialAudioState.asStateFlow() }
 
     private val _spatialAudioAvailable = MutableStateFlow(spatializer.isAvailable)
     val spatialAudioAvailable: StateFlow<Boolean> = _spatialAudioAvailable.asStateFlow()
@@ -192,7 +194,10 @@ class AudioEffectManager(private val context: Context) {
     private val spatializerListener = object : Spatializer.OnSpatializerStateChangedListener {
         override fun onSpatializerEnabledChanged(spat: Spatializer, enabled: Boolean) {
             Log.d(TAG, "Spatializer listener: onSpatializerEnabledChanged = $enabled")
-            _spatialAudioState.value = enabled
+            if (isHeadphonesActive() && spat.isAvailable) {
+                _spatialAudioState.value = enabled
+                prefs.edit().putBoolean(KEY_SPATIAL_AUDIO_ENABLED, enabled).apply()
+            }
         }
 
         override fun onSpatializerAvailableChanged(spat: Spatializer, available: Boolean) {
@@ -213,7 +218,6 @@ class AudioEffectManager(private val context: Context) {
     private fun registerSpatializerListener() {
         try {
             spatializer.addOnSpatializerStateChangedListener(context.mainExecutor, spatializerListener)
-            _spatialAudioState.value = spatializer.isEnabled
             _spatialAudioAvailable.value = spatializer.isAvailable
             Log.d(TAG, "Registered Spatializer state listener successfully")
         } catch (e: Exception) {
@@ -399,69 +403,101 @@ class AudioEffectManager(private val context: Context) {
         applyEqualizerSettings()
     }
 
-    // --- Immersive Sound (AOSP Spatializer) ---
+    // --- Immersive Sound (MiSound 3D Surround & Dolby DAP Spatializer) ---
 
-    fun isSpatialAudioAvailable(): Boolean = spatializer.isAvailable
+    fun isSpatialAudioAvailable(): Boolean = true
 
-    fun isSpatialAudioEnabled(): Boolean = _spatialAudioState.value
+    fun isSpatialAudioEnabled(): Boolean =
+        prefs.getBoolean(KEY_SPATIAL_AUDIO_ENABLED, prefs.getBoolean(KEY_SURROUND_ENABLED, false))
+
+    fun isHeadphonesActive(): Boolean {
+        val outputs = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+        return outputs.any {
+            it.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
+            it.type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
+            it.type == AudioDeviceInfo.TYPE_USB_HEADSET ||
+            it.type == AudioDeviceInfo.TYPE_USB_DEVICE ||
+            it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+            it.type == AudioDeviceInfo.TYPE_BLE_HEADSET ||
+            it.type == AudioDeviceInfo.TYPE_BLE_SPEAKER ||
+            it.type == AudioDeviceInfo.TYPE_HEARING_AID
+        }
+    }
 
     fun setSpatialAudioEnabled(enabled: Boolean) {
         Log.d(TAG, "setSpatialAudioEnabled: $enabled")
         // Optimistically update state flow for instant UI feedback
         _spatialAudioState.value = enabled
+        prefs.edit()
+            .putBoolean(KEY_SPATIAL_AUDIO_ENABLED, enabled)
+            .putBoolean(KEY_SURROUND_ENABLED, enabled)
+            .apply()
 
         executor.execute {
-            var success = false
-
-            // 1. Direct framework call (works when shipped as priv-app)
+            // 1. Dispatch MiSound AIDL 3D Surround parameter (20)
             try {
-                val method: Method = Spatializer::class.java.getMethod("setEnabled", Boolean::class.javaPrimitiveType)
-                method.isAccessible = true
-                method.invoke(spatializer, enabled)
-                success = true
-                Log.d(TAG, "Spatializer.setEnabled($enabled) succeeded directly")
+                setMiSoundParameter(MISOUND_PARAM_3D_SURROUND, if (enabled) 1 else 0)
+                Log.d(TAG, "Dispatched MiSound 3D surround parameter: $enabled")
             } catch (e: Exception) {
-                Log.w(TAG, "Direct Spatializer.setEnabled failed, trying root fallback", e)
+                Log.w(TAG, "Error setting MiSound 3D surround parameter", e)
             }
 
-            // 2. Root fallback via service call (transaction 229 = TRANSACTION_setSpatializerEnabled)
-            if (!success) {
-                val code = if (enabled) 1 else 0
-                val cmd = "service call audio 229 i32 $code"
-                val exitCode = executeRootCommand(cmd)
-                if (exitCode == 0) {
-                    success = true
-                    Log.d(TAG, "Root fallback service call audio 229 i32 $code succeeded")
-                } else {
-                    Log.e(TAG, "Root fallback service call audio 229 failed with exit code $exitCode")
-                }
-            }
-
-            // 3. Update system settings and audio HAL fade
+            // 2. Set persistent vendor property for 3D surround (hardware HAL switch)
             try {
-                Settings.Global.putInt(context.contentResolver, "spatial_audio_feature_enable", if (enabled) 1 else 0)
-                Settings.Global.putInt(context.contentResolver, "last_spatial_status", if (enabled) 1 else 0)
+                executeRootCommand("setprop persist.vendor.audio.3dsurround.enable ${if (enabled) "true" else "false"}")
+            } catch (e: Exception) {
+                Log.w(TAG, "Error setting persist.vendor.audio.3dsurround.enable", e)
+            }
+
+            // 3. Audio HAL parameters & switch fade
+            try {
+                audioManager.setParameters("3d_surround_enable=${if (enabled) "true" else "false"}")
                 audioManager.setParameters("effect_switch_fade=true")
             } catch (e: Exception) {
-                Log.w(TAG, "Error updating spatial settings", e)
+                Log.w(TAG, "Error setting audio parameters for 3D surround", e)
             }
+
+            // 4. Send MiSound 3D Surround broadcast
+            try {
+                val intent = Intent("com.miui.misound.ACTION_3D_SURROUND_STATE_CHANGED").apply {
+                    putExtra("extra_state", enabled)
+                    putExtra("state", enabled)
+                }
+                context.sendBroadcast(intent)
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not broadcast ACTION_3D_SURROUND_STATE_CHANGED", e)
+            }
+
+            // 5. Update system and global settings provider
+            try {
+                val code = if (enabled) 1 else 0
+                Settings.Global.putInt(context.contentResolver, "spatial_audio_feature_enable", code)
+                Settings.Global.putInt(context.contentResolver, "last_spatial_status", code)
+                executeRootCommand("settings put system is_spatial_audio $code && settings put global spatial_audio_feature_enable $code")
+            } catch (e: Exception) {
+                Log.d(TAG, "Note: spatial settings updated via fallback root", e)
+            }
+
+            // 6. Apply DAP Virtualizer DSP
+            applySurroundSound(enabled, getSurroundStrength())
+
+            saveCurrentStateToDevice()
         }
     }
 
     // --- Surround Sound (Virtualizer) ---
 
-    fun isSurroundEnabled(): Boolean = prefs.getBoolean(KEY_SURROUND_ENABLED, false)
+    fun isSurroundEnabled(): Boolean = isSpatialAudioEnabled()
 
     fun getSurroundStrength(): Int = prefs.getInt(KEY_SURROUND_STRENGTH, 500)
 
     fun setSurroundEnabled(enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_SURROUND_ENABLED, enabled).apply()
-        applySurroundSound(enabled, getSurroundStrength())
+        setSpatialAudioEnabled(enabled)
     }
 
     fun setSurroundStrength(strength: Int) {
         prefs.edit().putInt(KEY_SURROUND_STRENGTH, strength).apply()
-        if (isSurroundEnabled()) {
+        if (isSpatialAudioEnabled()) {
             applySurroundSound(true, strength)
         }
     }
@@ -474,15 +510,22 @@ class AudioEffectManager(private val context: Context) {
             EffectMode.DOLBY -> {
                 val profile = getDolbyProfile().id
                 try {
-                    // Enable/disable virtualizer controls on DAP
-                    setDolbyProfileParam(profile, DAP_PARAM_SPEAKER_VIRTUALIZER, intArrayOf(if (enabled) 1 else 0))
-                    setDolbyProfileParam(profile, DAP_PARAM_HEADPHONE_VIRTUALIZER, intArrayOf(if (enabled) 1 else 0))
+                    val isHeadphones = isHeadphonesActive()
+                    // Never enable speaker virtualizer on phone speakers (hardware policy ro.vendor.audio.surround.headphone.only=true)
+                    // Phone speakers in close chassis proximity suffer anti-phase acoustic cancellation that destroys bass/mids.
+                    setDolbyProfileParam(profile, DAP_PARAM_SPEAKER_VIRTUALIZER, intArrayOf(0))
+                    setDolbyPortParam(profile, 0, DAP_PARAM_STEREO_WIDENING, intArrayOf(0))
 
-                    // Map strength (0..1000) to Dolby stereo widening range (4..160)
-                    val widening = 4 + (strength * (160 - 4) / 1000)
-                    setDolbyPortParam(profile, 0, DAP_PARAM_STEREO_WIDENING, intArrayOf(widening))
-                    setDolbyPortParam(profile, 1, DAP_PARAM_STEREO_WIDENING, intArrayOf(widening))
-                    Log.d(TAG, "Applied Dolby surround virtualizer: enabled=$enabled, widening=$widening")
+                    if (isHeadphones) {
+                        setDolbyProfileParam(profile, DAP_PARAM_HEADPHONE_VIRTUALIZER, intArrayOf(if (enabled) 1 else 0))
+                        val widening = 4 + (strength * (160 - 4) / 1000)
+                        setDolbyPortParam(profile, 1, DAP_PARAM_STEREO_WIDENING, intArrayOf(if (enabled) widening else 0))
+                        Log.d(TAG, "Applied Dolby surround on headphones: enabled=$enabled, widening=$widening")
+                    } else {
+                        setDolbyProfileParam(profile, DAP_PARAM_HEADPHONE_VIRTUALIZER, intArrayOf(0))
+                        setDolbyPortParam(profile, 1, DAP_PARAM_STEREO_WIDENING, intArrayOf(0))
+                        Log.d(TAG, "Applied Dolby surround on speaker: virtualizer disabled to preserve rich acoustics")
+                    }
                 } catch (e: Exception) {
                     Log.w(TAG, "Error setting Dolby surround parameters", e)
                 }
@@ -499,20 +542,6 @@ class AudioEffectManager(private val context: Context) {
             EffectMode.OFF -> {
                 // Do nothing
             }
-        }
-
-        // Broadcast surround state change
-        try {
-            val intent = Intent("com.miui.misound.ACTION_3D_SURROUND_STATE_CHANGED")
-            intent.putExtra("state", enabled)
-            context.sendBroadcast(intent)
-        } catch (e: Exception) {
-            Log.w(TAG, "Could not broadcast ACTION_3D_SURROUND_STATE_CHANGED", e)
-        }
-
-        // Set persistent vendor property for 3D surround
-        executor.execute {
-            executeRootCommand("setprop persist.vendor.audio.3dsurround.enable ${if (enabled) "true" else "false"}")
         }
 
         // Apply fallback standard Virtualizer if available
@@ -1026,6 +1055,7 @@ class AudioEffectManager(private val context: Context) {
             .putString(KEY_EFFECT_MODE, mode.id)
             .putInt(KEY_DOLBY_PROFILE, profile.id)
             .putBoolean(KEY_SURROUND_ENABLED, snapshot.surroundEnabled)
+            .putBoolean(KEY_SPATIAL_AUDIO_ENABLED, snapshot.surroundEnabled)
             .putInt(KEY_SURROUND_STRENGTH, (snapshot.surroundStrength * 10).toInt())
             .putBoolean(KEY_EQUALIZER_ENABLED, snapshot.equalizerEnabled)
             .putString(KEY_EQUALIZER_BANDS, snapshot.equalizerBands.joinToString(","))
@@ -1049,6 +1079,7 @@ class AudioEffectManager(private val context: Context) {
         }
 
         _effectModeState.value = mode
+        _spatialAudioState.value = snapshot.surroundEnabled
         _equalizerEnabledState.value = snapshot.equalizerEnabled
         _equalizerBandsState.value = snapshot.equalizerBands
         _equalizerPresetState.value = snapshot.equalizerPreset
@@ -1079,12 +1110,37 @@ class AudioEffectManager(private val context: Context) {
                 intToByteArray(1, buf, 4)
                 intToByteArray(p, buf, 8)
                 setAudioEffectParameter(dolbyEffect, EFFECT_PARAM_CPDP_VALUES, buf)
-                setDolbyProfileParam(p, DAP_PARAM_BASS_ENHANCER_ENABLE, intArrayOf(1))
             }
-            Log.d(TAG, "Dolby DSP reset successfully across all profiles with Bass Enhancer active")
+            Log.d(TAG, "Dolby DSP reset successfully across all profiles to factory defaults")
         } catch (e: Exception) {
             Log.w(TAG, "Error resetting Dolby DSP", e)
         }
+
+        // Reset enhancer states to factory defaults (all disabled, 50% baseline)
+        prefs.edit()
+            .putBoolean(KEY_BASS_ENHANCER_ENABLED, false)
+            .putInt(KEY_BASS_ENHANCER_LEVEL, 50)
+            .putBoolean(KEY_MID_ENHANCER_ENABLED, false)
+            .putInt(KEY_MID_ENHANCER_LEVEL, 50)
+            .putBoolean(KEY_TREBLE_ENHANCER_ENABLED, false)
+            .putInt(KEY_TREBLE_ENHANCER_LEVEL, 50)
+            .putBoolean(KEY_VOLUME_LEVELER_ENABLED, false)
+            .putInt(KEY_VOLUME_LEVELER_LEVEL, 50)
+            .putBoolean(KEY_DIALOGUE_ENHANCER_ENABLED, false)
+            .putInt(KEY_DIALOGUE_ENHANCER_LEVEL, 50)
+            .apply()
+
+        _bassEnhancerEnabledState.value = false
+        _bassEnhancerLevelState.value = 50
+        _midEnhancerEnabledState.value = false
+        _midEnhancerLevelState.value = 50
+        _trebleEnhancerEnabledState.value = false
+        _trebleEnhancerLevelState.value = 50
+        _volumeLevelerEnabledState.value = false
+        _volumeLevelerLevelState.value = 50
+        _dialogueEnhancerEnabledState.value = false
+        _dialogueEnhancerLevelState.value = 50
+
         resetEqualizer()
         applyDolbyProfile(getDolbyProfile())
         saveCurrentStateToDevice()
@@ -1095,66 +1151,60 @@ class AudioEffectManager(private val context: Context) {
         val bands = getEqualizerBands()
         val profileId = getDolbyProfile().id
 
-        var computedBands = bands
-        if (isEnabled) {
-            val effective = bands.toMutableList()
-            if (isBassEnhancerEnabled()) {
-                val boost = (getBassEnhancerLevel() / 100f) * 6.0f
-                effective[0] = (effective[0] + boost).coerceIn(-12f, 12f)
-                effective[1] = (effective[1] + boost * 0.8f).coerceIn(-12f, 12f)
-                effective[2] = (effective[2] + boost * 0.4f).coerceIn(-12f, 12f)
-            }
-            if (isMidEnhancerEnabled()) {
-                val boost = (getMidEnhancerLevel() / 100f) * 4.5f
-                effective[3] = (effective[3] + boost * 0.3f).coerceIn(-12f, 12f)
-                effective[4] = (effective[4] + boost).coerceIn(-12f, 12f)
-                effective[5] = (effective[5] + boost).coerceIn(-12f, 12f)
-                effective[6] = (effective[6] + boost * 0.4f).coerceIn(-12f, 12f)
-            }
-            if (isTrebleEnhancerEnabled()) {
-                val boost = (getTrebleEnhancerLevel() / 100f) * 5.0f
-                effective[7] = (effective[7] + boost * 0.5f).coerceIn(-12f, 12f)
-                effective[8] = (effective[8] + boost * 0.85f).coerceIn(-12f, 12f)
-                effective[9] = (effective[9] + boost).coerceIn(-12f, 12f)
-            }
-            if (isDialogueEnhancerEnabled()) {
-                val boost = (getDialogueEnhancerLevel() / 100f) * 4.0f
-                effective[5] = (effective[5] + boost).coerceIn(-12f, 12f)
-                effective[6] = (effective[6] + boost * 0.8f).coerceIn(-12f, 12f)
-            }
-            computedBands = effective
+        val bassOn = isBassEnhancerEnabled()
+        val midOn = isMidEnhancerEnabled()
+        val trebleOn = isTrebleEnhancerEnabled()
+        val dialogueOn = isDialogueEnhancerEnabled()
+        val volumeOn = isVolumeLevelerEnabled()
+
+        var computedBands = if (isEnabled) bands.toMutableList() else MutableList(10) { 0f }
+
+        if (bassOn) {
+            val boost = (getBassEnhancerLevel() / 100f) * 6.0f
+            computedBands[0] = (computedBands[0] + boost).coerceIn(-12f, 12f)
+            computedBands[1] = (computedBands[1] + boost * 0.8f).coerceIn(-12f, 12f)
+            computedBands[2] = (computedBands[2] + boost * 0.4f).coerceIn(-12f, 12f)
+        }
+        if (midOn) {
+            val boost = (getMidEnhancerLevel() / 100f) * 4.5f
+            computedBands[3] = (computedBands[3] + boost * 0.3f).coerceIn(-12f, 12f)
+            computedBands[4] = (computedBands[4] + boost).coerceIn(-12f, 12f)
+            computedBands[5] = (computedBands[5] + boost).coerceIn(-12f, 12f)
+            computedBands[6] = (computedBands[6] + boost * 0.4f).coerceIn(-12f, 12f)
+        }
+        if (trebleOn) {
+            val boost = (getTrebleEnhancerLevel() / 100f) * 5.0f
+            computedBands[7] = (computedBands[7] + boost * 0.5f).coerceIn(-12f, 12f)
+            computedBands[8] = (computedBands[8] + boost * 0.85f).coerceIn(-12f, 12f)
+            computedBands[9] = (computedBands[9] + boost).coerceIn(-12f, 12f)
+        }
+        if (dialogueOn) {
+            val boost = (getDialogueEnhancerLevel() / 100f) * 4.0f
+            computedBands[5] = (computedBands[5] + boost).coerceIn(-12f, 12f)
+            computedBands[6] = (computedBands[6] + boost * 0.8f).coerceIn(-12f, 12f)
         }
 
         // 1. Dolby DAP Offload GEQ & Enhancers
         try {
-            val bassOn = isBassEnhancerEnabled()
-            val dialogueOn = isDialogueEnhancerEnabled()
-            val volumeOn = isVolumeLevelerEnabled()
-
-            // Dialogue Enhancer parameters (104, 105)
-            setDolbyProfileParam(profileId, DAP_PARAM_DIALOG_ENHANCER_ENABLE, intArrayOf(if (dialogueOn && isEnabled) 1 else 0))
+            // Dialogue Enhancer parameters (104, 105) - STANDALONE: independent of isEnabled
+            setDolbyProfileParam(profileId, DAP_PARAM_DIALOG_ENHANCER_ENABLE, intArrayOf(if (dialogueOn) 1 else 0))
             val dialogueAmount = (getDialogueEnhancerLevel() * 16 / 100).coerceIn(0, 16)
             setDolbyProfileParam(profileId, DAP_PARAM_DIALOG_ENHANCER_AMOUNT, intArrayOf(dialogueAmount))
 
-            // Volume Leveler parameters (112, 114)
-            setDolbyProfileParam(profileId, DAP_PARAM_VOLUME_LEVELER_ENABLE, intArrayOf(if (volumeOn && isEnabled) 1 else 0))
+            // Volume Leveler parameters (112, 114) - STANDALONE: independent of isEnabled
+            setDolbyProfileParam(profileId, DAP_PARAM_VOLUME_LEVELER_ENABLE, intArrayOf(if (volumeOn) 1 else 0))
             val volumeAmount = (getVolumeLevelerLevel() * 10 / 100).coerceIn(0, 10)
             setDolbyProfileParam(profileId, DAP_PARAM_VOLUME_LEVELER_AMOUNT, intArrayOf(volumeAmount))
 
-            // Bass Enhancer parameter (111)
-            setDolbyProfileParam(profileId, DAP_PARAM_BASS_ENHANCER_ENABLE, intArrayOf(if (bassOn || !isEnabled) 1 else 0))
+            // Bass Enhancer parameter (111) - ONLY active if user explicitly toggled bassOn
+            setDolbyProfileParam(profileId, DAP_PARAM_BASS_ENHANCER_ENABLE, intArrayOf(if (bassOn) 1 else 0))
 
-            if (isEnabled) {
+            val hasGeqAdjustment = isEnabled || bassOn || midOn || trebleOn || dialogueOn
+            if (hasGeqAdjustment) {
                 val dapGains = serialize10To20DapGains(computedBands)
                 setDolbyEqualizerGains(profileId, dapGains)
             } else {
-                // When EQ is disabled, restore factory profile calibration and Bass Enhancer
-                val buf = ByteArray(12)
-                intToByteArray(EFFECT_PARAM_RESET_PROFILE_SETTINGS, buf, 0)
-                intToByteArray(1, buf, 4)
-                intToByteArray(profileId, buf, 8)
-                setAudioEffectParameter(dolbyEffect, EFFECT_PARAM_CPDP_VALUES, buf)
-                setDolbyProfileParam(profileId, DAP_PARAM_BASS_ENHANCER_ENABLE, intArrayOf(1))
+                setDolbyEqualizerGains(profileId, IntArray(20) { 0 })
             }
         } catch (e: Exception) {
             Log.w(TAG, "Error setting Dolby DAP GEQ gains", e)

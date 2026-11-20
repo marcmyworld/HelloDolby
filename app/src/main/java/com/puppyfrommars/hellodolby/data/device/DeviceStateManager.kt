@@ -170,7 +170,7 @@ class DeviceStateManager(
     fun loadSnapshot(key: String, name: String): AudioDeviceSnapshot {
         val effectMode = prefs.getString("${key}_effect_mode", "dolby") ?: "dolby"
         val dolbyProfile = prefs.getInt("${key}_dolby_profile", 0)
-        val surroundEnabled = prefs.getBoolean("${key}_surround_enabled", true)
+        val surroundEnabled = prefs.getBoolean("${key}_surround_enabled", false)
         val surroundStrength = prefs.getFloat("${key}_surround_strength", 0.5f)
         val equalizerEnabled = prefs.getBoolean("${key}_equalizer_enabled", false)
         val rawBands = prefs.getString("${key}_equalizer_bands", null)

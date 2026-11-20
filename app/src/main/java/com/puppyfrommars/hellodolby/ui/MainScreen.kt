@@ -235,7 +235,6 @@ fun EffectsTab(audioManager: AudioEffectManager, padding: PaddingValues) {
     val effectMode by audioManager.effectModeState.collectAsState()
     var dolbyProfile by remember { mutableStateOf(audioManager.getDolbyProfile()) }
     val spatialEnabled by audioManager.spatialAudioState.collectAsState()
-    var surroundEnabled by remember { mutableStateOf(audioManager.isSurroundEnabled()) }
     var surroundStrength by remember { mutableFloatStateOf(audioManager.getSurroundStrength() / 10f) }
 
     val bassEnhancerEnabled by audioManager.bassEnhancerEnabledState.collectAsState()
@@ -659,7 +658,7 @@ fun EffectsTab(audioManager: AudioEffectManager, padding: PaddingValues) {
         Card(
             modifier = Modifier.fillMaxWidth()
         ) {
-            // Immersive sound (AOSP Spatializer)
+            // Immersive sound (MiSound 3D Surround & Dolby Spatializer)
             SwitchPreference(
                 title = stringResource(R.string.immersive_sound),
                 summary = stringResource(R.string.immersive_sound_summary),
@@ -669,18 +668,7 @@ fun EffectsTab(audioManager: AudioEffectManager, padding: PaddingValues) {
                 }
             )
 
-            // Virtualizer (Surround Sound)
-            SwitchPreference(
-                title = stringResource(R.string.virtualizer),
-                summary = stringResource(R.string.virtualizer_summary),
-                checked = surroundEnabled,
-                onCheckedChange = { checked ->
-                    surroundEnabled = checked
-                    audioManager.setSurroundEnabled(checked)
-                }
-            )
-
-            if (surroundEnabled) {
+            if (spatialEnabled) {
                 SliderPreference(
                     title = stringResource(R.string.virtualizer_intensity),
                     summary = "${surroundStrength.toInt()}%",
