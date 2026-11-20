@@ -5,6 +5,16 @@
 
 package com.puppyfrommars.hellodolby.ui
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -12,6 +22,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -49,6 +61,20 @@ fun MainScreen(
     onThemeChange: (AppThemeMode) -> Unit
 ) {
     var currentTab by rememberSaveable { mutableStateOf(ScreenTab.EFFECTS) }
+    var rotationTarget by rememberSaveable { mutableFloatStateOf(0f) }
+    val rotation by animateFloatAsState(
+        targetValue = rotationTarget,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMediumLow
+        ),
+        label = "ThemeRotation"
+    )
+
+    val handleThemeChange: (AppThemeMode) -> Unit = { newMode ->
+        rotationTarget += 180f
+        onThemeChange(newMode)
+    }
 
     Scaffold(
         topBar = {
@@ -61,14 +87,38 @@ fun MainScreen(
                 actions = {
                     IconButton(
                         onClick = {
-                            onThemeChange(themeMode.next())
+                            handleThemeChange(themeMode.next())
                         }
                     ) {
-                        Icon(
-                            imageVector = MiuixIcons.Theme,
-                            contentDescription = stringResource(R.string.theme_toggle_desc),
-                            tint = MiuixTheme.colorScheme.onSurface
-                        )
+                        AnimatedContent(
+                            targetState = themeMode,
+                            transitionSpec = {
+                                (fadeIn(animationSpec = tween(220)) + scaleIn(initialScale = 0.6f, animationSpec = tween(220)))
+                                    .togetherWith(
+                                        fadeOut(animationSpec = tween(180)) + scaleOut(targetScale = 0.6f, animationSpec = tween(180))
+                                    )
+                            },
+                            label = "ThemeIconAnimation"
+                        ) { mode ->
+                            val iconRes = when (mode) {
+                                AppThemeMode.LIGHT -> R.drawable.ic_theme_light
+                                AppThemeMode.DARK -> R.drawable.ic_theme_dark
+                                AppThemeMode.SYSTEM -> R.drawable.ic_theme_auto
+                            }
+                            val desc = when (mode) {
+                                AppThemeMode.LIGHT -> stringResource(R.string.theme_mode_light)
+                                AppThemeMode.DARK -> stringResource(R.string.theme_mode_dark)
+                                AppThemeMode.SYSTEM -> stringResource(R.string.theme_mode_system)
+                            }
+                            Icon(
+                                painter = painterResource(iconRes),
+                                contentDescription = desc,
+                                tint = MiuixTheme.colorScheme.onSurface,
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .rotate(rotation)
+                            )
+                        }
                     }
                 }
             )
@@ -99,7 +149,7 @@ fun MainScreen(
     ) { padding ->
         when (currentTab) {
             ScreenTab.EFFECTS -> EffectsTab(audioManager, padding)
-            ScreenTab.CONTRIBUTORS -> ContributorsScreen(padding, themeMode, onThemeChange)
+            ScreenTab.CONTRIBUTORS -> ContributorsScreen(padding, themeMode, handleThemeChange)
         }
     }
 }
