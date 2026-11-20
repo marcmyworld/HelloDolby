@@ -1,4 +1,4 @@
-package com.xiaomi.hellodolby.audio
+package com.puppyfrommars.hellodolby.audio
 
 import android.content.Context
 import android.content.Intent
@@ -81,6 +81,9 @@ class AudioEffectManager(private val context: Context) {
     private val _spatialAudioAvailable = MutableStateFlow(spatializer.isAvailable)
     val spatialAudioAvailable: StateFlow<Boolean> = _spatialAudioAvailable.asStateFlow()
 
+    private val _effectModeState by lazy { MutableStateFlow(getEffectMode()) }
+    val effectModeState: StateFlow<EffectMode> by lazy { _effectModeState.asStateFlow() }
+
     private val spatializerListener = object : Spatializer.OnSpatializerStateChangedListener {
         override fun onSpatializerEnabledChanged(spat: Spatializer, enabled: Boolean) {
             Log.d(TAG, "Spatializer listener: onSpatializerEnabledChanged = $enabled")
@@ -136,6 +139,7 @@ class AudioEffectManager(private val context: Context) {
 
     fun setEffectMode(mode: EffectMode) {
         prefs.edit().putString(KEY_EFFECT_MODE, mode.id).apply()
+        _effectModeState.value = mode
         applyEffectMode(mode)
     }
 

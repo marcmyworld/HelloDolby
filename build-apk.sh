@@ -35,5 +35,5 @@ if adb get-state >/dev/null 2>&1; then
     echo "=== Installing to connected ADB device ==="
     adb install -r -d -g "$FINAL_APK"
     echo "=== Launching HelloDolby on device ==="
-    adb shell am start -n com.xiaomi.hellodolby/.ui.MainActivity
+    adb shell am start -n com.puppyfrommars.hellodolby/.ui.MainActivity
 fi

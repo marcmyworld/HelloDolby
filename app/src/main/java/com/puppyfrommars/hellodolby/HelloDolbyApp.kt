@@ -1,7 +1,7 @@
-package com.xiaomi.hellodolby
+package com.puppyfrommars.hellodolby
 
 import android.app.Application
-import com.xiaomi.hellodolby.audio.AudioEffectManager
+import com.puppyfrommars.hellodolby.audio.AudioEffectManager
 
 class HelloDolbyApp : Application() {
     lateinit var audioEffectManager: AudioEffectManager

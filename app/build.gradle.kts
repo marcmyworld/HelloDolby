@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "com.xiaomi.hellodolby"
+    namespace = "com.puppyfrommars.hellodolby"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.xiaomi.hellodolby"
+        applicationId = "com.puppyfrommars.hellodolby"
         minSdk = 31
         targetSdk = 35
         versionCode = 1
@@ -39,6 +39,7 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("top.yukonga.miuix.kmp:miuix-ui-android:0.9.4")
     implementation("top.yukonga.miuix.kmp:miuix-preference-android:0.9.4")
+    implementation("top.yukonga.miuix.kmp:miuix-icons-android:0.9.4")
 }
 
 tasks.withType<com.android.build.gradle.internal.tasks.CheckAarMetadataTask>().configureEach {

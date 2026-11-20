@@ -4,7 +4,7 @@
      SPDX-License-Identifier: Apache-2.0
 -->
 <permissions>
-    <privapp-permissions package="com.xiaomi.hellodolby">
+    <privapp-permissions package="com.puppyfrommars.hellodolby">
         <permission name="android.permission.MODIFY_DEFAULT_AUDIO_EFFECTS" />
         <permission name="android.permission.WRITE_SECURE_SETTINGS" />
     </privapp-permissions>
