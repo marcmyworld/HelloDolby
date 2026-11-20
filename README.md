@@ -28,17 +28,24 @@
 - **Spatial Audio &amp; Virtualizer**:
   - **Immersive Sound**: Native AOSP Spatializer integration for multi-channel spatialized audio.
   - **Surround Sound (Virtualizer)**: Stereo acoustic separation and soundstage expansion with real-time 0–100% intensity slider.
+- **Fine Tune (Equalizer Engine)**:
+  - **10-Band Vertical Sliders**: Side-by-side vertical tactile sliders from sub-bass (32 Hz) to brilliance treble (16 kHz) with centered 0 dB notches and live dB readouts.
+  - **Interactive Live EQ Graph**: Spline-interpolated live frequency response curve with draggable control points and gradient fill, switchable on the fly.
+  - **MiSound-Style Image Preset Cards**: Rich carousel with customized background artwork for Flat, Rock, Jazz, Pop, Classical, Hip Hop, Electronic, Vocal Boost, and Bass Boost.
+  - **Custom Preset Management**: "Save Current" button and "Manage" popup dialog to apply, rename, and delete custom user equalizer presets.
+  - **AutoEQ Integration**: Bundled offline catalog of 8,853 measured headphone and earbud target curves with multi-token search and 1-tap download and application.
+  - **Dedicated Reset Section**: Independent actions to reset equalizer bands to neutral (0.0 dB) or reset the entire Dolby Audio DSP engine (purges stale tuning and reactivates factory calibration and Bass Enhancer).
+- **Multi-Device Profile Memory &amp; Persistence**:
+  - Automatically detects connected audio outputs: Phone Speaker, Bluetooth Headsets, 3.5mm Wired Headphones, and USB Audio DACs.
+  - Independently saves and restores snapshots per device without mixing configurations.
+  - Seamless persistence across reboots via `BootCompletedReceiver`.
 - **Quick Settings Tile**:
   - **"Dolby Atmos"** quick tile in the notification shade to toggle between Dolby Atmos enabled and disabled (fallback to Xiaomi Sound) with active preset subtitles.
-- **Miuix HyperOS Design Language**:
-  - Smooth rounded squircles, tactile cards, and fluid animations.
-  - **Floating Bottom Bar**: Translucent liquid-glass floating toolbar for effortless navigation between **Effects** and **Contributors** screens.
-- **Material You Dynamic Theming (Monet)**:
-  - Wallpaper-based dynamic MD3 color palette extraction (`MonetLight`, `MonetDark`, `MonetSystem`).
-  - **Theme Toggle**: In-app header action to switch between Light, Dark, and Follow System modes.
-  - **Intelligent Status Bar Insets**: High-contrast status bar and navigation bar rendering (crisp dark icons on light backgrounds, white icons on dark backgrounds).
-- **Original Copyright-Safe Branding**:
-  - Custom acoustic wave squircle iconography across all mipmap densities (`mdpi`, `hdpi`, `xhdpi`, `xxhdpi`, `xxxhdpi`).
+- **Adaptive Icon &amp; Material You Theming**:
+  - Android 13+ adaptive icon with full-bleed background, balanced safe-margin glyph, and monochrome themed icon support.
+  - Dynamic Material You Monet wallpaper palettes (`MonetLight`, `MonetDark`, `MonetSystem`).
+  - Animated top theme switcher (Sun for Light, Moon for Dark, Auto-A for System).
+  - Three-tab bottom navigation: **Effects**, **Fine Tune**, and **About**.
 
 ---
 

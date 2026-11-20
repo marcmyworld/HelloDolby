@@ -44,6 +44,7 @@ import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Info
 import top.yukonga.miuix.kmp.icon.extended.Music
 import top.yukonga.miuix.kmp.icon.extended.Theme
+import top.yukonga.miuix.kmp.icon.extended.Tune
 import top.yukonga.miuix.kmp.preference.RadioButtonPreference
 import top.yukonga.miuix.kmp.preference.SliderPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
@@ -51,6 +52,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 enum class ScreenTab {
     EFFECTS,
+    EQUALIZER,
     CONTRIBUTORS
 }
 
@@ -79,10 +81,10 @@ fun MainScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = if (currentTab == ScreenTab.EFFECTS) {
-                    stringResource(R.string.app_name)
-                } else {
-                    stringResource(R.string.contributors_title)
+                title = when (currentTab) {
+                    ScreenTab.EFFECTS -> stringResource(R.string.app_name)
+                    ScreenTab.EQUALIZER -> stringResource(R.string.tab_fine_tune)
+                    ScreenTab.CONTRIBUTORS -> stringResource(R.string.tab_about)
                 },
                 actions = {
                     IconButton(
@@ -138,10 +140,16 @@ fun MainScreen(
                     label = stringResource(R.string.tab_effects)
                 )
                 FloatingNavigationBarItem(
+                    selected = currentTab == ScreenTab.EQUALIZER,
+                    onClick = { currentTab = ScreenTab.EQUALIZER },
+                    icon = MiuixIcons.Tune,
+                    label = stringResource(R.string.tab_fine_tune)
+                )
+                FloatingNavigationBarItem(
                     selected = currentTab == ScreenTab.CONTRIBUTORS,
                     onClick = { currentTab = ScreenTab.CONTRIBUTORS },
                     icon = MiuixIcons.Info,
-                    label = stringResource(R.string.tab_contributors)
+                    label = stringResource(R.string.tab_about)
                 )
             }
         },
@@ -149,6 +157,7 @@ fun MainScreen(
     ) { padding ->
         when (currentTab) {
             ScreenTab.EFFECTS -> EffectsTab(audioManager, padding)
+            ScreenTab.EQUALIZER -> EqualizerScreen(audioManager, padding)
             ScreenTab.CONTRIBUTORS -> ContributorsScreen(padding, themeMode, handleThemeChange)
         }
     }

@@ -5,10 +5,13 @@ import android.content.Intent
 import android.media.AudioManager
 import android.media.Spatializer
 import android.media.audiofx.AudioEffect
+import android.media.audiofx.Equalizer
 import android.media.audiofx.Virtualizer
 import android.os.UserHandle
 import android.provider.Settings
 import android.util.Log
+import com.puppyfrommars.hellodolby.data.device.AudioDeviceSnapshot
+import com.puppyfrommars.hellodolby.data.device.DeviceStateManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -57,9 +60,32 @@ class AudioEffectManager(private val context: Context) {
         private const val EFFECT_PARAM_PROFILE = 0x0a000000
         private const val EFFECT_PARAM_PROFILE_PARAMETER = 0x1000000
         private const val EFFECT_PARAM_PROFILE_PORT_PARAMETER = 0x2000000
+        private const val EFFECT_PARAM_RESET_PROFILE_SETTINGS = 0x0c000000
         private const val DAP_PARAM_HEADPHONE_VIRTUALIZER = 0x65 // 101
         private const val DAP_PARAM_SPEAKER_VIRTUALIZER = 0x66   // 102
+        private const val DAP_PARAM_GEQ_BAND_GAINS = 110
+        private const val DAP_PARAM_BASS_ENHANCER_ENABLE = 111
         private const val DAP_PARAM_STEREO_WIDENING = 0x71       // 113
+
+        // Equalizer & AutoEQ Constants
+        private const val KEY_EQUALIZER_ENABLED = "equalizer_enabled"
+        private const val KEY_EQUALIZER_BANDS = "equalizer_bands"
+        private const val KEY_EQUALIZER_PRESET = "equalizer_preset"
+        private const val KEY_AUTOEQ_PROFILE_NAME = "autoeq_profile_name"
+        private const val KEY_CUSTOM_PRESETS = "custom_presets_json"
+        val DEFAULT_EQUALIZER_BANDS = listOf(0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f)
+
+        val BUILTIN_PRESETS = mapOf(
+            "Flat" to listOf(0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f),
+            "Rock" to listOf(5f, 3.5f, 1.5f, 0f, -1f, 0.5f, 2f, 3.5f, 4.5f, 5f),
+            "Jazz" to listOf(3.5f, 2f, 1f, 2f, -1f, -1f, 0.5f, 1.5f, 2.5f, 3.5f),
+            "Pop" to listOf(-1f, 1.5f, 3f, 4f, 3f, 1.5f, -0.5f, -1f, 2f, 3f),
+            "Classical" to listOf(4f, 3f, 2f, 2f, -1f, -1f, 0f, 2f, 3f, 3.5f),
+            "Hip Hop" to listOf(5.5f, 4.5f, 2f, 1f, -1f, -1f, 1f, 2.5f, 3.5f, 4.5f),
+            "Electronic" to listOf(4.5f, 3.5f, 1.5f, 0f, -1f, 1f, 0f, 2.5f, 4f, 4.5f),
+            "Vocal Boost" to listOf(-2f, -2f, -1f, 1.5f, 3.5f, 4f, 3.5f, 1.5f, 0f, -1f),
+            "Bass Boost" to listOf(6f, 5f, 4f, 2f, 0.5f, 0f, 0f, 0f, 0f, 0f)
+        )
 
         // MiSound Parameter IDs
         private const val MISOUND_PARAM_MODE = 0
@@ -74,6 +100,7 @@ class AudioEffectManager(private val context: Context) {
     private var dolbyEffect: AudioEffect? = null
     private var miSoundEffect: AudioEffect? = null
     private var virtualizer: Virtualizer? = null
+    private var equalizerEffect: Equalizer? = null
 
     private val _spatialAudioState = MutableStateFlow(spatializer.isEnabled)
     val spatialAudioState: StateFlow<Boolean> = _spatialAudioState.asStateFlow()
@@ -83,6 +110,25 @@ class AudioEffectManager(private val context: Context) {
 
     private val _effectModeState by lazy { MutableStateFlow(getEffectMode()) }
     val effectModeState: StateFlow<EffectMode> by lazy { _effectModeState.asStateFlow() }
+
+    private val _equalizerEnabledState by lazy { MutableStateFlow(isEqualizerEnabled()) }
+    val equalizerEnabledState: StateFlow<Boolean> by lazy { _equalizerEnabledState.asStateFlow() }
+
+    private val _equalizerBandsState by lazy { MutableStateFlow(getEqualizerBands()) }
+    val equalizerBandsState: StateFlow<List<Float>> by lazy { _equalizerBandsState.asStateFlow() }
+
+    private val _equalizerPresetState by lazy { MutableStateFlow(getEqualizerPreset()) }
+    val equalizerPresetState: StateFlow<String> by lazy { _equalizerPresetState.asStateFlow() }
+
+    private val _autoEqProfileNameState by lazy { MutableStateFlow(getAutoEqProfileName()) }
+    val autoEqProfileNameState: StateFlow<String?> by lazy { _autoEqProfileNameState.asStateFlow() }
+
+    private val _customPresetsState by lazy { MutableStateFlow(loadCustomPresets()) }
+    val customPresetsState: StateFlow<Map<String, List<Float>>> by lazy { _customPresetsState.asStateFlow() }
+
+    private var deviceStateManager: DeviceStateManager? = null
+    private val _connectedDeviceState = MutableStateFlow("Phone Speaker")
+    val connectedDeviceState: StateFlow<String> = _connectedDeviceState.asStateFlow()
 
     private val spatializerListener = object : Spatializer.OnSpatializerStateChangedListener {
         override fun onSpatializerEnabledChanged(spat: Spatializer, enabled: Boolean) {
@@ -99,6 +145,10 @@ class AudioEffectManager(private val context: Context) {
     init {
         initEffects()
         registerSpatializerListener()
+        deviceStateManager = DeviceStateManager(context) { snapshot ->
+            onDeviceSnapshotRestored(snapshot)
+        }
+        _connectedDeviceState.value = deviceStateManager?.getActiveDeviceName() ?: "Phone Speaker"
     }
 
     private fun registerSpatializerListener() {
@@ -122,12 +172,20 @@ class AudioEffectManager(private val context: Context) {
             Log.w(TAG, "Fallback Virtualizer not available", e)
         }
 
+        try {
+            equalizerEffect = Equalizer(0, 0)
+        } catch (e: Exception) {
+            Log.w(TAG, "Fallback Equalizer not available", e)
+        }
+
         val mode = getEffectMode()
         applyEffectMode(mode)
 
         val surroundEnabled = isSurroundEnabled()
         val surroundStrength = getSurroundStrength()
         applySurroundSound(surroundEnabled, surroundStrength)
+
+        applyEqualizerSettings()
     }
 
     // --- Audio Processing Engine ---
@@ -277,6 +335,8 @@ class AudioEffectManager(private val context: Context) {
                 // Expected when unprivileged in userdebug / data install
             }
         }
+
+        applyEqualizerSettings()
     }
 
     // --- Immersive Sound (AOSP Spatializer) ---
@@ -539,9 +599,269 @@ class AudioEffectManager(private val context: Context) {
         return -1
     }
 
+    // --- Equalizer & AutoEQ Management ---
+
+    fun isEqualizerEnabled(): Boolean = prefs.getBoolean(KEY_EQUALIZER_ENABLED, false)
+
+    fun setEqualizerEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_EQUALIZER_ENABLED, enabled).apply()
+        _equalizerEnabledState.value = enabled
+        applyEqualizerSettings()
+    }
+
+    fun getEqualizerBands(): List<Float> {
+        val saved = prefs.getString(KEY_EQUALIZER_BANDS, null) ?: return DEFAULT_EQUALIZER_BANDS
+        val parsed = saved.split(",").mapNotNull { it.toFloatOrNull() }
+        return if (parsed.size == 10) parsed else DEFAULT_EQUALIZER_BANDS
+    }
+
+    fun setEqualizerBands(bands: List<Float>, preset: String = "Custom") {
+        val clamped = bands.map { it.coerceIn(-10f, 10f) }
+        prefs.edit()
+            .putString(KEY_EQUALIZER_BANDS, clamped.joinToString(","))
+            .putString(KEY_EQUALIZER_PRESET, preset)
+            .apply()
+        _equalizerBandsState.value = clamped
+        _equalizerPresetState.value = preset
+        applyEqualizerSettings()
+    }
+
+    fun setEqualizerBand(index: Int, gainDb: Float) {
+        if (index !in 0 until 10) return
+        val current = getEqualizerBands().toMutableList()
+        current[index] = (Math.round(gainDb * 10f) / 10f).coerceIn(-10f, 10f)
+        setEqualizerBands(current, "Custom")
+    }
+
+    fun getEqualizerPreset(): String = prefs.getString(KEY_EQUALIZER_PRESET, "Flat") ?: "Flat"
+
+    fun setEqualizerPreset(presetName: String) {
+        val presetBands = BUILTIN_PRESETS[presetName] ?: loadCustomPresets()[presetName]
+        if (presetBands != null) {
+            setEqualizerBands(presetBands, presetName)
+        } else {
+            prefs.edit().putString(KEY_EQUALIZER_PRESET, presetName).apply()
+            _equalizerPresetState.value = presetName
+        }
+    }
+
+    fun loadCustomPresets(): Map<String, List<Float>> {
+        val jsonStr = prefs.getString(KEY_CUSTOM_PRESETS, null) ?: return emptyMap()
+        return try {
+            val json = org.json.JSONObject(jsonStr)
+            val map = mutableMapOf<String, List<Float>>()
+            for (key in json.keys()) {
+                val arr = json.getJSONArray(key)
+                val list = mutableListOf<Float>()
+                for (i in 0 until arr.length()) {
+                    list.add(arr.getDouble(i).toFloat())
+                }
+                if (list.size == 10) {
+                    map[key] = list
+                }
+            }
+            map
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed parsing custom presets", e)
+            emptyMap()
+        }
+    }
+
+    fun saveCustomPreset(name: String, bands: List<Float>) {
+        val current = loadCustomPresets().toMutableMap()
+        val clamped = bands.map { it.coerceIn(-10f, 10f) }
+        current[name] = clamped
+        saveCustomPresetsMap(current)
+        setEqualizerBands(clamped, name)
+    }
+
+    fun deleteCustomPreset(name: String) {
+        val current = loadCustomPresets().toMutableMap()
+        current.remove(name)
+        saveCustomPresetsMap(current)
+        if (getEqualizerPreset() == name) {
+            setEqualizerPreset("Flat")
+        }
+    }
+
+    fun renameCustomPreset(oldName: String, newName: String) {
+        val current = loadCustomPresets().toMutableMap()
+        val bands = current.remove(oldName) ?: return
+        current[newName] = bands
+        saveCustomPresetsMap(current)
+        if (getEqualizerPreset() == oldName) {
+            prefs.edit().putString(KEY_EQUALIZER_PRESET, newName).apply()
+            _equalizerPresetState.value = newName
+            saveCurrentStateToDevice()
+        }
+    }
+
+    private fun saveCustomPresetsMap(map: Map<String, List<Float>>) {
+        val json = org.json.JSONObject()
+        for ((k, v) in map) {
+            val arr = org.json.JSONArray()
+            for (f in v) {
+                arr.put(f.toDouble())
+            }
+            json.put(k, arr)
+        }
+        prefs.edit().putString(KEY_CUSTOM_PRESETS, json.toString()).apply()
+        _customPresetsState.value = map
+    }
+
+    fun getAutoEqProfileName(): String? = prefs.getString(KEY_AUTOEQ_PROFILE_NAME, null)
+
+    fun setAutoEqProfile(name: String, bands: List<Float>) {
+        prefs.edit().putString(KEY_AUTOEQ_PROFILE_NAME, name).apply()
+        _autoEqProfileNameState.value = name
+        setEqualizerBands(bands, name)
+    }
+
+    fun resetEqualizer() {
+        setEqualizerBands(DEFAULT_EQUALIZER_BANDS, "Flat")
+        prefs.edit().remove(KEY_AUTOEQ_PROFILE_NAME).apply()
+        _autoEqProfileNameState.value = null
+    }
+
+    fun saveCurrentStateToDevice() {
+        deviceStateManager?.saveSnapshot(
+            effectMode = getEffectMode().id,
+            dolbyProfile = getDolbyProfile().id,
+            surroundEnabled = isSurroundEnabled(),
+            surroundStrength = getSurroundStrength() / 10f,
+            equalizerEnabled = isEqualizerEnabled(),
+            equalizerBands = getEqualizerBands(),
+            equalizerPreset = getEqualizerPreset(),
+            autoEqProfileName = getAutoEqProfileName()
+        )
+    }
+
+    private fun onDeviceSnapshotRestored(snapshot: AudioDeviceSnapshot) {
+        Log.d(TAG, "Restoring audio device snapshot: ${snapshot.displayName}")
+        _connectedDeviceState.value = snapshot.displayName
+
+        val mode = EffectMode.fromId(snapshot.effectMode)
+        val profile = DolbyProfile.fromId(snapshot.dolbyProfile)
+
+        prefs.edit()
+            .putString(KEY_EFFECT_MODE, mode.id)
+            .putInt(KEY_DOLBY_PROFILE, profile.id)
+            .putBoolean(KEY_SURROUND_ENABLED, snapshot.surroundEnabled)
+            .putInt(KEY_SURROUND_STRENGTH, (snapshot.surroundStrength * 10).toInt())
+            .putBoolean(KEY_EQUALIZER_ENABLED, snapshot.equalizerEnabled)
+            .putString(KEY_EQUALIZER_BANDS, snapshot.equalizerBands.joinToString(","))
+            .putString(KEY_EQUALIZER_PRESET, snapshot.equalizerPreset)
+            .apply()
+
+        if (snapshot.autoEqProfileName != null) {
+            prefs.edit().putString(KEY_AUTOEQ_PROFILE_NAME, snapshot.autoEqProfileName).apply()
+        } else {
+            prefs.edit().remove(KEY_AUTOEQ_PROFILE_NAME).apply()
+        }
+
+        _effectModeState.value = mode
+        _equalizerEnabledState.value = snapshot.equalizerEnabled
+        _equalizerBandsState.value = snapshot.equalizerBands
+        _equalizerPresetState.value = snapshot.equalizerPreset
+        _autoEqProfileNameState.value = snapshot.autoEqProfileName
+
+        applyEffectMode(mode)
+        applySurroundSound(snapshot.surroundEnabled, (snapshot.surroundStrength * 10).toInt())
+        applyEqualizerSettings()
+    }
+
+    fun resetDolbyDsp() {
+        Log.d(TAG, "Resetting Dolby DAP DSP to factory defaults")
+        try {
+            val profiles = listOf(0, 1, 2, 8)
+            for (p in profiles) {
+                val buf = ByteArray(12)
+                intToByteArray(EFFECT_PARAM_RESET_PROFILE_SETTINGS, buf, 0)
+                intToByteArray(1, buf, 4)
+                intToByteArray(p, buf, 8)
+                setAudioEffectParameter(dolbyEffect, EFFECT_PARAM_CPDP_VALUES, buf)
+                setDolbyProfileParam(p, DAP_PARAM_BASS_ENHANCER_ENABLE, intArrayOf(1))
+            }
+            Log.d(TAG, "Dolby DSP reset successfully across all profiles with Bass Enhancer active")
+        } catch (e: Exception) {
+            Log.w(TAG, "Error resetting Dolby DSP", e)
+        }
+        resetEqualizer()
+        applyDolbyProfile(getDolbyProfile())
+        saveCurrentStateToDevice()
+    }
+
+    fun applyEqualizerSettings() {
+        val isEnabled = isEqualizerEnabled()
+        val bands = getEqualizerBands()
+
+        // 1. Dolby DAP Offload GEQ (20 internal DSP bands)
+        try {
+            if (isEnabled) {
+                val dapGains = serialize10To20DapGains(bands)
+                setDolbyEqualizerGains(getDolbyProfile().id, dapGains)
+            } else {
+                // When EQ is disabled, restore factory profile calibration and Bass Enhancer
+                val buf = ByteArray(12)
+                intToByteArray(EFFECT_PARAM_RESET_PROFILE_SETTINGS, buf, 0)
+                intToByteArray(1, buf, 4)
+                intToByteArray(getDolbyProfile().id, buf, 8)
+                setAudioEffectParameter(dolbyEffect, EFFECT_PARAM_CPDP_VALUES, buf)
+                setDolbyProfileParam(getDolbyProfile().id, DAP_PARAM_BASS_ENHANCER_ENABLE, intArrayOf(1))
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Error setting Dolby DAP GEQ gains", e)
+        }
+
+        // 2. Global Equalizer Effect (MiSound & AOSP Output)
+        try {
+            equalizerEffect?.let { eq ->
+                eq.enabled = isEnabled
+                if (isEnabled) {
+                    val numBands = eq.numberOfBands.toInt()
+                    for (i in 0 until minOf(bands.size, numBands)) {
+                        val millibels = (bands[i] * 100).toInt().coerceIn(-1500, 1500).toShort()
+                        eq.setBandLevel(i.toShort(), millibels)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Error applying fallback Equalizer effect", e)
+        }
+
+        saveCurrentStateToDevice()
+    }
+
+    private fun setDolbyEqualizerGains(profile: Int, gains20: IntArray) {
+        val length = gains20.size
+        val buffer = ByteArray((length + 4) * 4)
+        intToByteArray(EFFECT_PARAM_PROFILE_PARAMETER, buffer, 0)
+        intToByteArray(length + 1, buffer, 4)
+        intToByteArray(profile, buffer, 8)
+        intToByteArray(DAP_PARAM_GEQ_BAND_GAINS, buffer, 12)
+        for (i in gains20.indices) {
+            intToByteArray(gains20[i], buffer, 16 + i * 4)
+        }
+        setAudioEffectParameter(dolbyEffect, EFFECT_PARAM_CPDP_VALUES, buffer)
+    }
+
+    private fun serialize10To20DapGains(tenBandGains: List<Float>): IntArray {
+        val result = IntArray(20) { 0 }
+        val gainsInt = tenBandGains.map { (it * 10f).toInt() }
+        for (i in 0 until minOf(10, gainsInt.size)) {
+            result[i * 2] = gainsInt[i]
+        }
+        for (i in 0 until 18 step 2) {
+            result[i + 1] = (result[i] + result[i + 2]) / 2
+        }
+        result[19] = result[18]
+        return result
+    }
+
     fun release() {
         try {
             spatializer.removeOnSpatializerStateChangedListener(spatializerListener)
+            deviceStateManager?.release()
         } catch (e: Exception) {
             Log.w(TAG, "Error unregistering Spatializer listener", e)
         }
@@ -549,6 +869,7 @@ class AudioEffectManager(private val context: Context) {
             dolbyEffect?.release()
             miSoundEffect?.release()
             virtualizer?.release()
+            equalizerEffect?.release()
         } catch (e: Exception) {
             Log.w(TAG, "Error releasing audio effects", e)
         }
