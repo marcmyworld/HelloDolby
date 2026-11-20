@@ -19,33 +19,37 @@
 
 ## ✨ Features
 
-- **Audio Processing Engine Selection**:
-  - **Dolby Atmos**: Hardware-accelerated Dolby Audio Processing (DAP) offload engine for cinematic 3D soundstages.
-  - **Xiaomi Sound**: High-fidelity Xiaomi acoustic tuning (MiSound FX).
-  - **Direct / Pure DAC (Off)**: Bit-perfect passthrough without DSP coloring.
-- **Dolby Audio Profiles**:
-  - Instant preset switching: **Dynamic**, **Movie**, **Music**, and **Voice**.
+- **Audio Engine Selection & Dynamic 16:9 Artwork Banners**:
+  - **Dolby Atmos**: Hardware-accelerated Dolby Audio Processing (DAP) offload engine for cinematic 3D soundstages, paired with a custom holographic 3D spatial sphere banner.
+  - **Xiaomi Sound**: High-fidelity Xiaomi acoustic tuning (MiSound FX) accompanied by an audiophile glowing vacuum tube artwork banner.
+  - **Direct / Pure DAC (Off)**: Bit-perfect uncolored DAC passthrough, represented by a precision DAC ladder and pure sine banner.
+- **Dolby Audio Presets (Full Suite from DAX/hardware_dolby)**:
+  - 6 distinct hardware-accelerated profiles: **Dynamic**, **Movie**, **Music**, **Game**, **Voice**, and **Custom**.
+  - **Spotlight Pager Carousel**: Center-spotlight swipeable banner carousel highlighting the active preset with smooth scaling, depth, and snap-to-center physics.
+  - **2-Column Preset Grid**: Compact 2-column grid replacing overlong settings lists, with zero tick space on the left and full bidirectional sync with the carousel.
 - **Spatial Audio &amp; Virtualizer**:
   - **Immersive Sound**: Native AOSP Spatializer integration for multi-channel spatialized audio.
   - **Surround Sound (Virtualizer)**: Stereo acoustic separation and soundstage expansion with real-time 0–100% intensity slider.
-- **Fine Tune (Equalizer Engine)**:
+- **Fine Tune (Equalizer Engine & Audio Enhancers)**:
+  - **Audio Enhancers**: Dedicated toggle and slider controls for **Bass Enhancer**, **Mid Enhancer** (with 0–100% presence intensity slider), **Treble Enhancer**, **Dialogue Enhancer**, and **Volume Leveler**.
   - **10-Band Vertical Sliders**: Side-by-side vertical tactile sliders from sub-bass (32 Hz) to brilliance treble (16 kHz) with centered 0 dB notches and live dB readouts.
-  - **Interactive Live EQ Graph**: Spline-interpolated live frequency response curve with draggable control points and gradient fill, switchable on the fly.
+  - **Interactive Live EQ Graph**: Spline-interpolated live frequency response curve with draggable control points and gradient fill, switchable on the fly with a single rotating animated icon button.
   - **MiSound-Style Image Preset Cards**: Rich carousel with customized background artwork for Flat, Rock, Jazz, Pop, Classical, Hip Hop, Electronic, Vocal Boost, and Bass Boost.
-  - **Custom Preset Management**: "Save Current" button and "Manage" popup dialog to apply, rename, and delete custom user equalizer presets.
+  - **Custom Preset Management**: "Save Current" button and "Manage" popup dialog to apply, rename, and delete custom user equalizer presets with high-contrast text fields in both dark and light themes.
   - **AutoEQ Integration**: Bundled offline catalog of 8,853 measured headphone and earbud target curves with multi-token search and 1-tap download and application.
-  - **Dedicated Reset Section**: Independent actions to reset equalizer bands to neutral (0.0 dB) or reset the entire Dolby Audio DSP engine (purges stale tuning and reactivates factory calibration and Bass Enhancer).
+  - **Dedicated Reset Section**: Independent actions visible at all times to reset equalizer bands to neutral (0.0 dB) or reset the entire Dolby Audio DSP engine (purges stale tuning and reactivates factory calibration and Bass Enhancer).
+  - **Graceful Disabled State**: Equalizer controls grey out when disabled while preserving smooth vertical touch scrolling across the screen.
 - **Multi-Device Profile Memory &amp; Persistence**:
   - Automatically detects connected audio outputs: Phone Speaker, Bluetooth Headsets, 3.5mm Wired Headphones, and USB Audio DACs.
   - Independently saves and restores snapshots per device without mixing configurations.
   - Seamless persistence across reboots via `BootCompletedReceiver`.
 - **Quick Settings Tile**:
-  - **"Dolby Atmos"** quick tile in the notification shade to toggle between Dolby Atmos enabled and disabled (fallback to Xiaomi Sound) with active preset subtitles.
+  - **"Dolby Atmos"** quick tile in the notification shade to toggle between Dolby Atmos enabled and disabled (fallback to Xiaomi Sound) with active preset subtitles across all profiles.
 - **Adaptive Icon &amp; Material You Theming**:
   - Android 13+ adaptive icon with full-bleed background, balanced safe-margin glyph, and monochrome themed icon support.
   - Dynamic Material You Monet wallpaper palettes (`MonetLight`, `MonetDark`, `MonetSystem`).
   - Animated top theme switcher (Sun for Light, Moon for Dark, Auto-A for System).
-  - Three-tab bottom navigation: **Effects**, **Fine Tune**, and **About**.
+  - Three-tab bottom navigation: **Audio Engine**, **Fine Tune**, and **About**.
 
 ---
 

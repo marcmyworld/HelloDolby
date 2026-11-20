@@ -27,7 +27,17 @@ data class AudioDeviceSnapshot(
     val equalizerEnabled: Boolean,
     val equalizerBands: List<Float>,
     val equalizerPreset: String,
-    val autoEqProfileName: String?
+    val autoEqProfileName: String?,
+    val bassEnhancerEnabled: Boolean = false,
+    val bassEnhancerLevel: Int = 50,
+    val midEnhancerEnabled: Boolean = false,
+    val midEnhancerLevel: Int = 50,
+    val trebleEnhancerEnabled: Boolean = false,
+    val trebleEnhancerLevel: Int = 50,
+    val volumeLevelerEnabled: Boolean = false,
+    val volumeLevelerLevel: Int = 50,
+    val dialogueEnhancerEnabled: Boolean = false,
+    val dialogueEnhancerLevel: Int = 50
 )
 
 class DeviceStateManager(
@@ -121,7 +131,17 @@ class DeviceStateManager(
         equalizerEnabled: Boolean,
         equalizerBands: List<Float>,
         equalizerPreset: String,
-        autoEqProfileName: String?
+        autoEqProfileName: String?,
+        bassEnhancerEnabled: Boolean = false,
+        bassEnhancerLevel: Int = 50,
+        midEnhancerEnabled: Boolean = false,
+        midEnhancerLevel: Int = 50,
+        trebleEnhancerEnabled: Boolean = false,
+        trebleEnhancerLevel: Int = 50,
+        volumeLevelerEnabled: Boolean = false,
+        volumeLevelerLevel: Int = 50,
+        dialogueEnhancerEnabled: Boolean = false,
+        dialogueEnhancerLevel: Int = 50
     ) {
         val key = activeDeviceKey
         Log.d(TAG, "Saving snapshot for device key: $key ($activeDeviceName)")
@@ -134,6 +154,16 @@ class DeviceStateManager(
             .putString("${key}_equalizer_bands", equalizerBands.joinToString(","))
             .putString("${key}_equalizer_preset", equalizerPreset)
             .putString("${key}_autoeq_name", autoEqProfileName)
+            .putBoolean("${key}_bass_enhancer_enabled", bassEnhancerEnabled)
+            .putInt("${key}_bass_enhancer_level", bassEnhancerLevel)
+            .putBoolean("${key}_mid_enhancer_enabled", midEnhancerEnabled)
+            .putInt("${key}_mid_enhancer_level", midEnhancerLevel)
+            .putBoolean("${key}_treble_enhancer_enabled", trebleEnhancerEnabled)
+            .putInt("${key}_treble_enhancer_level", trebleEnhancerLevel)
+            .putBoolean("${key}_volume_leveler_enabled", volumeLevelerEnabled)
+            .putInt("${key}_volume_leveler_level", volumeLevelerLevel)
+            .putBoolean("${key}_dialogue_enhancer_enabled", dialogueEnhancerEnabled)
+            .putInt("${key}_dialogue_enhancer_level", dialogueEnhancerLevel)
             .apply()
     }
 
@@ -152,6 +182,16 @@ class DeviceStateManager(
         }
         val equalizerPreset = prefs.getString("${key}_equalizer_preset", "Flat") ?: "Flat"
         val autoEqName = prefs.getString("${key}_autoeq_name", null)
+        val bassEnabled = prefs.getBoolean("${key}_bass_enhancer_enabled", false)
+        val bassLevel = prefs.getInt("${key}_bass_enhancer_level", 50)
+        val midEnabled = prefs.getBoolean("${key}_mid_enhancer_enabled", false)
+        val midLevel = prefs.getInt("${key}_mid_enhancer_level", 50)
+        val trebleEnabled = prefs.getBoolean("${key}_treble_enhancer_enabled", false)
+        val trebleLevel = prefs.getInt("${key}_treble_enhancer_level", 50)
+        val volumeLevelerEnabled = prefs.getBoolean("${key}_volume_leveler_enabled", false)
+        val volumeLevelerLevel = prefs.getInt("${key}_volume_leveler_level", 50)
+        val dialogueEnabled = prefs.getBoolean("${key}_dialogue_enhancer_enabled", false)
+        val dialogueLevel = prefs.getInt("${key}_dialogue_enhancer_level", 50)
 
         return AudioDeviceSnapshot(
             deviceKey = key,
@@ -163,7 +203,17 @@ class DeviceStateManager(
             equalizerEnabled = equalizerEnabled,
             equalizerBands = bands,
             equalizerPreset = equalizerPreset,
-            autoEqProfileName = autoEqName
+            autoEqProfileName = autoEqName,
+            bassEnhancerEnabled = bassEnabled,
+            bassEnhancerLevel = bassLevel,
+            midEnhancerEnabled = midEnabled,
+            midEnhancerLevel = midLevel,
+            trebleEnhancerEnabled = trebleEnabled,
+            trebleEnhancerLevel = trebleLevel,
+            volumeLevelerEnabled = volumeLevelerEnabled,
+            volumeLevelerLevel = volumeLevelerLevel,
+            dialogueEnhancerEnabled = dialogueEnabled,
+            dialogueEnhancerLevel = dialogueLevel
         )
     }
 

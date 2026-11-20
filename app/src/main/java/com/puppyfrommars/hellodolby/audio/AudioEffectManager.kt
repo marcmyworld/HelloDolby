@@ -33,7 +33,9 @@ enum class DolbyProfile(val id: Int) {
     DYNAMIC(0),
     MOVIE(1),
     MUSIC(2),
-    VOICE(8);
+    GAME(4),
+    VOICE(8),
+    CUSTOM(3);
 
     companion object {
         fun fromId(id: Int): DolbyProfile = entries.firstOrNull { it.id == id } ?: DYNAMIC
@@ -65,6 +67,10 @@ class AudioEffectManager(private val context: Context) {
         private const val DAP_PARAM_SPEAKER_VIRTUALIZER = 0x66   // 102
         private const val DAP_PARAM_GEQ_BAND_GAINS = 110
         private const val DAP_PARAM_BASS_ENHANCER_ENABLE = 111
+        private const val DAP_PARAM_DIALOG_ENHANCER_ENABLE = 104
+        private const val DAP_PARAM_DIALOG_ENHANCER_AMOUNT = 105
+        private const val DAP_PARAM_VOLUME_LEVELER_ENABLE = 112
+        private const val DAP_PARAM_VOLUME_LEVELER_AMOUNT = 114
         private const val DAP_PARAM_STEREO_WIDENING = 0x71       // 113
 
         // Equalizer & AutoEQ Constants
@@ -73,6 +79,18 @@ class AudioEffectManager(private val context: Context) {
         private const val KEY_EQUALIZER_PRESET = "equalizer_preset"
         private const val KEY_AUTOEQ_PROFILE_NAME = "autoeq_profile_name"
         private const val KEY_CUSTOM_PRESETS = "custom_presets_json"
+
+        // Enhancer Constants
+        private const val KEY_BASS_ENHANCER_ENABLED = "bass_enhancer_enabled"
+        private const val KEY_BASS_ENHANCER_LEVEL = "bass_enhancer_level"
+        private const val KEY_MID_ENHANCER_ENABLED = "mid_enhancer_enabled"
+        private const val KEY_MID_ENHANCER_LEVEL = "mid_enhancer_level"
+        private const val KEY_TREBLE_ENHANCER_ENABLED = "treble_enhancer_enabled"
+        private const val KEY_TREBLE_ENHANCER_LEVEL = "treble_enhancer_level"
+        private const val KEY_VOLUME_LEVELER_ENABLED = "volume_leveler_enabled"
+        private const val KEY_VOLUME_LEVELER_LEVEL = "volume_leveler_level"
+        private const val KEY_DIALOGUE_ENHANCER_ENABLED = "dialogue_enhancer_enabled"
+        private const val KEY_DIALOGUE_ENHANCER_LEVEL = "dialogue_enhancer_level"
         val DEFAULT_EQUALIZER_BANDS = listOf(0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f)
 
         val BUILTIN_PRESETS = mapOf(
@@ -125,6 +143,36 @@ class AudioEffectManager(private val context: Context) {
 
     private val _customPresetsState by lazy { MutableStateFlow(loadCustomPresets()) }
     val customPresetsState: StateFlow<Map<String, List<Float>>> by lazy { _customPresetsState.asStateFlow() }
+
+    private val _bassEnhancerEnabledState by lazy { MutableStateFlow(isBassEnhancerEnabled()) }
+    val bassEnhancerEnabledState: StateFlow<Boolean> by lazy { _bassEnhancerEnabledState.asStateFlow() }
+
+    private val _bassEnhancerLevelState by lazy { MutableStateFlow(getBassEnhancerLevel()) }
+    val bassEnhancerLevelState: StateFlow<Int> by lazy { _bassEnhancerLevelState.asStateFlow() }
+
+    private val _midEnhancerEnabledState by lazy { MutableStateFlow(isMidEnhancerEnabled()) }
+    val midEnhancerEnabledState: StateFlow<Boolean> by lazy { _midEnhancerEnabledState.asStateFlow() }
+
+    private val _midEnhancerLevelState by lazy { MutableStateFlow(getMidEnhancerLevel()) }
+    val midEnhancerLevelState: StateFlow<Int> by lazy { _midEnhancerLevelState.asStateFlow() }
+
+    private val _trebleEnhancerEnabledState by lazy { MutableStateFlow(isTrebleEnhancerEnabled()) }
+    val trebleEnhancerEnabledState: StateFlow<Boolean> by lazy { _trebleEnhancerEnabledState.asStateFlow() }
+
+    private val _trebleEnhancerLevelState by lazy { MutableStateFlow(getTrebleEnhancerLevel()) }
+    val trebleEnhancerLevelState: StateFlow<Int> by lazy { _trebleEnhancerLevelState.asStateFlow() }
+
+    private val _volumeLevelerEnabledState by lazy { MutableStateFlow(isVolumeLevelerEnabled()) }
+    val volumeLevelerEnabledState: StateFlow<Boolean> by lazy { _volumeLevelerEnabledState.asStateFlow() }
+
+    private val _volumeLevelerLevelState by lazy { MutableStateFlow(getVolumeLevelerLevel()) }
+    val volumeLevelerLevelState: StateFlow<Int> by lazy { _volumeLevelerLevelState.asStateFlow() }
+
+    private val _dialogueEnhancerEnabledState by lazy { MutableStateFlow(isDialogueEnhancerEnabled()) }
+    val dialogueEnhancerEnabledState: StateFlow<Boolean> by lazy { _dialogueEnhancerEnabledState.asStateFlow() }
+
+    private val _dialogueEnhancerLevelState by lazy { MutableStateFlow(getDialogueEnhancerLevel()) }
+    val dialogueEnhancerLevelState: StateFlow<Int> by lazy { _dialogueEnhancerLevelState.asStateFlow() }
 
     private var deviceStateManager: DeviceStateManager? = null
     private val _connectedDeviceState = MutableStateFlow("Phone Speaker")
@@ -719,8 +767,103 @@ class AudioEffectManager(private val context: Context) {
 
     fun resetEqualizer() {
         setEqualizerBands(DEFAULT_EQUALIZER_BANDS, "Flat")
-        prefs.edit().remove(KEY_AUTOEQ_PROFILE_NAME).apply()
+        prefs.edit()
+            .remove(KEY_AUTOEQ_PROFILE_NAME)
+            .putBoolean(KEY_BASS_ENHANCER_ENABLED, false)
+            .putInt(KEY_BASS_ENHANCER_LEVEL, 50)
+            .putBoolean(KEY_MID_ENHANCER_ENABLED, false)
+            .putInt(KEY_MID_ENHANCER_LEVEL, 50)
+            .putBoolean(KEY_TREBLE_ENHANCER_ENABLED, false)
+            .putInt(KEY_TREBLE_ENHANCER_LEVEL, 50)
+            .putBoolean(KEY_VOLUME_LEVELER_ENABLED, false)
+            .putInt(KEY_VOLUME_LEVELER_LEVEL, 50)
+            .putBoolean(KEY_DIALOGUE_ENHANCER_ENABLED, false)
+            .putInt(KEY_DIALOGUE_ENHANCER_LEVEL, 50)
+            .apply()
         _autoEqProfileNameState.value = null
+        _bassEnhancerEnabledState.value = false
+        _bassEnhancerLevelState.value = 50
+        _midEnhancerEnabledState.value = false
+        _midEnhancerLevelState.value = 50
+        _trebleEnhancerEnabledState.value = false
+        _trebleEnhancerLevelState.value = 50
+        _volumeLevelerEnabledState.value = false
+        _volumeLevelerLevelState.value = 50
+        _dialogueEnhancerEnabledState.value = false
+        _dialogueEnhancerLevelState.value = 50
+        applyEqualizerSettings()
+    }
+
+    // --- Enhancers (Bass, Mid, Treble, Volume Leveler, Dialogue) ---
+
+    fun isBassEnhancerEnabled(): Boolean = prefs.getBoolean(KEY_BASS_ENHANCER_ENABLED, false)
+    fun getBassEnhancerLevel(): Int = prefs.getInt(KEY_BASS_ENHANCER_LEVEL, 50)
+    fun setBassEnhancerEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_BASS_ENHANCER_ENABLED, enabled).apply()
+        _bassEnhancerEnabledState.value = enabled
+        applyEqualizerSettings()
+    }
+    fun setBassEnhancerLevel(level: Int) {
+        val clamped = level.coerceIn(0, 100)
+        prefs.edit().putInt(KEY_BASS_ENHANCER_LEVEL, clamped).apply()
+        _bassEnhancerLevelState.value = clamped
+        if (isBassEnhancerEnabled()) applyEqualizerSettings()
+    }
+
+    fun isMidEnhancerEnabled(): Boolean = prefs.getBoolean(KEY_MID_ENHANCER_ENABLED, false)
+    fun getMidEnhancerLevel(): Int = prefs.getInt(KEY_MID_ENHANCER_LEVEL, 50)
+    fun setMidEnhancerEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_MID_ENHANCER_ENABLED, enabled).apply()
+        _midEnhancerEnabledState.value = enabled
+        applyEqualizerSettings()
+    }
+    fun setMidEnhancerLevel(level: Int) {
+        val clamped = level.coerceIn(0, 100)
+        prefs.edit().putInt(KEY_MID_ENHANCER_LEVEL, clamped).apply()
+        _midEnhancerLevelState.value = clamped
+        if (isMidEnhancerEnabled()) applyEqualizerSettings()
+    }
+
+    fun isTrebleEnhancerEnabled(): Boolean = prefs.getBoolean(KEY_TREBLE_ENHANCER_ENABLED, false)
+    fun getTrebleEnhancerLevel(): Int = prefs.getInt(KEY_TREBLE_ENHANCER_LEVEL, 50)
+    fun setTrebleEnhancerEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_TREBLE_ENHANCER_ENABLED, enabled).apply()
+        _trebleEnhancerEnabledState.value = enabled
+        applyEqualizerSettings()
+    }
+    fun setTrebleEnhancerLevel(level: Int) {
+        val clamped = level.coerceIn(0, 100)
+        prefs.edit().putInt(KEY_TREBLE_ENHANCER_LEVEL, clamped).apply()
+        _trebleEnhancerLevelState.value = clamped
+        if (isTrebleEnhancerEnabled()) applyEqualizerSettings()
+    }
+
+    fun isVolumeLevelerEnabled(): Boolean = prefs.getBoolean(KEY_VOLUME_LEVELER_ENABLED, false)
+    fun getVolumeLevelerLevel(): Int = prefs.getInt(KEY_VOLUME_LEVELER_LEVEL, 50)
+    fun setVolumeLevelerEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_VOLUME_LEVELER_ENABLED, enabled).apply()
+        _volumeLevelerEnabledState.value = enabled
+        applyEqualizerSettings()
+    }
+    fun setVolumeLevelerLevel(level: Int) {
+        val clamped = level.coerceIn(0, 100)
+        prefs.edit().putInt(KEY_VOLUME_LEVELER_LEVEL, clamped).apply()
+        _volumeLevelerLevelState.value = clamped
+        if (isVolumeLevelerEnabled()) applyEqualizerSettings()
+    }
+
+    fun isDialogueEnhancerEnabled(): Boolean = prefs.getBoolean(KEY_DIALOGUE_ENHANCER_ENABLED, false)
+    fun getDialogueEnhancerLevel(): Int = prefs.getInt(KEY_DIALOGUE_ENHANCER_LEVEL, 50)
+    fun setDialogueEnhancerEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_DIALOGUE_ENHANCER_ENABLED, enabled).apply()
+        _dialogueEnhancerEnabledState.value = enabled
+        applyEqualizerSettings()
+    }
+    fun setDialogueEnhancerLevel(level: Int) {
+        val clamped = level.coerceIn(0, 100)
+        prefs.edit().putInt(KEY_DIALOGUE_ENHANCER_LEVEL, clamped).apply()
+        _dialogueEnhancerLevelState.value = clamped
+        if (isDialogueEnhancerEnabled()) applyEqualizerSettings()
     }
 
     fun saveCurrentStateToDevice() {
@@ -732,7 +875,17 @@ class AudioEffectManager(private val context: Context) {
             equalizerEnabled = isEqualizerEnabled(),
             equalizerBands = getEqualizerBands(),
             equalizerPreset = getEqualizerPreset(),
-            autoEqProfileName = getAutoEqProfileName()
+            autoEqProfileName = getAutoEqProfileName(),
+            bassEnhancerEnabled = isBassEnhancerEnabled(),
+            bassEnhancerLevel = getBassEnhancerLevel(),
+            midEnhancerEnabled = isMidEnhancerEnabled(),
+            midEnhancerLevel = getMidEnhancerLevel(),
+            trebleEnhancerEnabled = isTrebleEnhancerEnabled(),
+            trebleEnhancerLevel = getTrebleEnhancerLevel(),
+            volumeLevelerEnabled = isVolumeLevelerEnabled(),
+            volumeLevelerLevel = getVolumeLevelerLevel(),
+            dialogueEnhancerEnabled = isDialogueEnhancerEnabled(),
+            dialogueEnhancerLevel = getDialogueEnhancerLevel()
         )
     }
 
@@ -751,6 +904,16 @@ class AudioEffectManager(private val context: Context) {
             .putBoolean(KEY_EQUALIZER_ENABLED, snapshot.equalizerEnabled)
             .putString(KEY_EQUALIZER_BANDS, snapshot.equalizerBands.joinToString(","))
             .putString(KEY_EQUALIZER_PRESET, snapshot.equalizerPreset)
+            .putBoolean(KEY_BASS_ENHANCER_ENABLED, snapshot.bassEnhancerEnabled)
+            .putInt(KEY_BASS_ENHANCER_LEVEL, snapshot.bassEnhancerLevel)
+            .putBoolean(KEY_MID_ENHANCER_ENABLED, snapshot.midEnhancerEnabled)
+            .putInt(KEY_MID_ENHANCER_LEVEL, snapshot.midEnhancerLevel)
+            .putBoolean(KEY_TREBLE_ENHANCER_ENABLED, snapshot.trebleEnhancerEnabled)
+            .putInt(KEY_TREBLE_ENHANCER_LEVEL, snapshot.trebleEnhancerLevel)
+            .putBoolean(KEY_VOLUME_LEVELER_ENABLED, snapshot.volumeLevelerEnabled)
+            .putInt(KEY_VOLUME_LEVELER_LEVEL, snapshot.volumeLevelerLevel)
+            .putBoolean(KEY_DIALOGUE_ENHANCER_ENABLED, snapshot.dialogueEnhancerEnabled)
+            .putInt(KEY_DIALOGUE_ENHANCER_LEVEL, snapshot.dialogueEnhancerLevel)
             .apply()
 
         if (snapshot.autoEqProfileName != null) {
@@ -764,6 +927,16 @@ class AudioEffectManager(private val context: Context) {
         _equalizerBandsState.value = snapshot.equalizerBands
         _equalizerPresetState.value = snapshot.equalizerPreset
         _autoEqProfileNameState.value = snapshot.autoEqProfileName
+        _bassEnhancerEnabledState.value = snapshot.bassEnhancerEnabled
+        _bassEnhancerLevelState.value = snapshot.bassEnhancerLevel
+        _midEnhancerEnabledState.value = snapshot.midEnhancerEnabled
+        _midEnhancerLevelState.value = snapshot.midEnhancerLevel
+        _trebleEnhancerEnabledState.value = snapshot.trebleEnhancerEnabled
+        _trebleEnhancerLevelState.value = snapshot.trebleEnhancerLevel
+        _volumeLevelerEnabledState.value = snapshot.volumeLevelerEnabled
+        _volumeLevelerLevelState.value = snapshot.volumeLevelerLevel
+        _dialogueEnhancerEnabledState.value = snapshot.dialogueEnhancerEnabled
+        _dialogueEnhancerLevelState.value = snapshot.dialogueEnhancerLevel
 
         applyEffectMode(mode)
         applySurroundSound(snapshot.surroundEnabled, (snapshot.surroundStrength * 10).toInt())
@@ -773,7 +946,7 @@ class AudioEffectManager(private val context: Context) {
     fun resetDolbyDsp() {
         Log.d(TAG, "Resetting Dolby DAP DSP to factory defaults")
         try {
-            val profiles = listOf(0, 1, 2, 8)
+            val profiles = listOf(0, 1, 2, 3, 4, 8)
             for (p in profiles) {
                 val buf = ByteArray(12)
                 intToByteArray(EFFECT_PARAM_RESET_PROFILE_SETTINGS, buf, 0)
@@ -794,20 +967,68 @@ class AudioEffectManager(private val context: Context) {
     fun applyEqualizerSettings() {
         val isEnabled = isEqualizerEnabled()
         val bands = getEqualizerBands()
+        val profileId = getDolbyProfile().id
 
-        // 1. Dolby DAP Offload GEQ (20 internal DSP bands)
+        var computedBands = bands
+        if (isEnabled) {
+            val effective = bands.toMutableList()
+            if (isBassEnhancerEnabled()) {
+                val boost = (getBassEnhancerLevel() / 100f) * 6.0f
+                effective[0] = (effective[0] + boost).coerceIn(-12f, 12f)
+                effective[1] = (effective[1] + boost * 0.8f).coerceIn(-12f, 12f)
+                effective[2] = (effective[2] + boost * 0.4f).coerceIn(-12f, 12f)
+            }
+            if (isMidEnhancerEnabled()) {
+                val boost = (getMidEnhancerLevel() / 100f) * 4.5f
+                effective[3] = (effective[3] + boost * 0.3f).coerceIn(-12f, 12f)
+                effective[4] = (effective[4] + boost).coerceIn(-12f, 12f)
+                effective[5] = (effective[5] + boost).coerceIn(-12f, 12f)
+                effective[6] = (effective[6] + boost * 0.4f).coerceIn(-12f, 12f)
+            }
+            if (isTrebleEnhancerEnabled()) {
+                val boost = (getTrebleEnhancerLevel() / 100f) * 5.0f
+                effective[7] = (effective[7] + boost * 0.5f).coerceIn(-12f, 12f)
+                effective[8] = (effective[8] + boost * 0.85f).coerceIn(-12f, 12f)
+                effective[9] = (effective[9] + boost).coerceIn(-12f, 12f)
+            }
+            if (isDialogueEnhancerEnabled()) {
+                val boost = (getDialogueEnhancerLevel() / 100f) * 4.0f
+                effective[5] = (effective[5] + boost).coerceIn(-12f, 12f)
+                effective[6] = (effective[6] + boost * 0.8f).coerceIn(-12f, 12f)
+            }
+            computedBands = effective
+        }
+
+        // 1. Dolby DAP Offload GEQ & Enhancers
         try {
+            val bassOn = isBassEnhancerEnabled()
+            val dialogueOn = isDialogueEnhancerEnabled()
+            val volumeOn = isVolumeLevelerEnabled()
+
+            // Dialogue Enhancer parameters (104, 105)
+            setDolbyProfileParam(profileId, DAP_PARAM_DIALOG_ENHANCER_ENABLE, intArrayOf(if (dialogueOn && isEnabled) 1 else 0))
+            val dialogueAmount = (getDialogueEnhancerLevel() * 16 / 100).coerceIn(0, 16)
+            setDolbyProfileParam(profileId, DAP_PARAM_DIALOG_ENHANCER_AMOUNT, intArrayOf(dialogueAmount))
+
+            // Volume Leveler parameters (112, 114)
+            setDolbyProfileParam(profileId, DAP_PARAM_VOLUME_LEVELER_ENABLE, intArrayOf(if (volumeOn && isEnabled) 1 else 0))
+            val volumeAmount = (getVolumeLevelerLevel() * 10 / 100).coerceIn(0, 10)
+            setDolbyProfileParam(profileId, DAP_PARAM_VOLUME_LEVELER_AMOUNT, intArrayOf(volumeAmount))
+
+            // Bass Enhancer parameter (111)
+            setDolbyProfileParam(profileId, DAP_PARAM_BASS_ENHANCER_ENABLE, intArrayOf(if (bassOn || !isEnabled) 1 else 0))
+
             if (isEnabled) {
-                val dapGains = serialize10To20DapGains(bands)
-                setDolbyEqualizerGains(getDolbyProfile().id, dapGains)
+                val dapGains = serialize10To20DapGains(computedBands)
+                setDolbyEqualizerGains(profileId, dapGains)
             } else {
                 // When EQ is disabled, restore factory profile calibration and Bass Enhancer
                 val buf = ByteArray(12)
                 intToByteArray(EFFECT_PARAM_RESET_PROFILE_SETTINGS, buf, 0)
                 intToByteArray(1, buf, 4)
-                intToByteArray(getDolbyProfile().id, buf, 8)
+                intToByteArray(profileId, buf, 8)
                 setAudioEffectParameter(dolbyEffect, EFFECT_PARAM_CPDP_VALUES, buf)
-                setDolbyProfileParam(getDolbyProfile().id, DAP_PARAM_BASS_ENHANCER_ENABLE, intArrayOf(1))
+                setDolbyProfileParam(profileId, DAP_PARAM_BASS_ENHANCER_ENABLE, intArrayOf(1))
             }
         } catch (e: Exception) {
             Log.w(TAG, "Error setting Dolby DAP GEQ gains", e)
@@ -819,8 +1040,8 @@ class AudioEffectManager(private val context: Context) {
                 eq.enabled = isEnabled
                 if (isEnabled) {
                     val numBands = eq.numberOfBands.toInt()
-                    for (i in 0 until minOf(bands.size, numBands)) {
-                        val millibels = (bands[i] * 100).toInt().coerceIn(-1500, 1500).toShort()
+                    for (i in 0 until minOf(computedBands.size, numBands)) {
+                        val millibels = (computedBands[i] * 100).toInt().coerceIn(-1500, 1500).toShort()
                         eq.setBandLevel(i.toShort(), millibels)
                     }
                 }

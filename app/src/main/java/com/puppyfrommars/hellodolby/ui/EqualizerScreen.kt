@@ -6,6 +6,10 @@
 package com.puppyfrommars.hellodolby.ui
 
 import androidx.compose.animation.*
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -27,9 +31,12 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -47,6 +54,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.puppyfrommars.hellodolby.R
 import com.puppyfrommars.hellodolby.audio.AudioEffectManager
+import com.puppyfrommars.hellodolby.audio.EffectMode
 import com.puppyfrommars.hellodolby.data.autoeq.AutoEqIndexEntry
 import com.puppyfrommars.hellodolby.data.autoeq.AutoEqRepository
 import kotlinx.coroutines.launch
@@ -56,6 +64,7 @@ import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Ok
 import top.yukonga.miuix.kmp.preference.ArrowPreference
+import top.yukonga.miuix.kmp.preference.SliderPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
@@ -102,13 +111,38 @@ fun EqualizerScreen(
     val scrollState = rememberScrollState()
 
     val connectedDevice by audioManager.connectedDeviceState.collectAsState()
+    val effectMode by audioManager.effectModeState.collectAsState()
     val equalizerEnabled by audioManager.equalizerEnabledState.collectAsState()
     val bandGains by audioManager.equalizerBandsState.collectAsState()
     val activePreset by audioManager.equalizerPresetState.collectAsState()
     val customPresets by audioManager.customPresetsState.collectAsState()
     val autoEqProfileName by audioManager.autoEqProfileNameState.collectAsState()
 
+    val bassEnhancerEnabled by audioManager.bassEnhancerEnabledState.collectAsState()
+    val bassEnhancerLevel by audioManager.bassEnhancerLevelState.collectAsState()
+    val midEnhancerEnabled by audioManager.midEnhancerEnabledState.collectAsState()
+    val midEnhancerLevel by audioManager.midEnhancerLevelState.collectAsState()
+    val trebleEnhancerEnabled by audioManager.trebleEnhancerEnabledState.collectAsState()
+    val trebleEnhancerLevel by audioManager.trebleEnhancerLevelState.collectAsState()
+    val volumeLevelerEnabled by audioManager.volumeLevelerEnabledState.collectAsState()
+    val volumeLevelerLevel by audioManager.volumeLevelerLevelState.collectAsState()
+    val dialogueEnhancerEnabled by audioManager.dialogueEnhancerEnabledState.collectAsState()
+    val dialogueEnhancerLevel by audioManager.dialogueEnhancerLevelState.collectAsState()
+
+    val isDolbyActive = effectMode == EffectMode.DOLBY
+    val isInteractive = equalizerEnabled && isDolbyActive
+
     var viewMode by remember { mutableStateOf(EqViewMode.SLIDERS) }
+    var viewModeRotationTarget by rememberSaveable { mutableFloatStateOf(0f) }
+    val viewModeRotation by animateFloatAsState(
+        targetValue = viewModeRotationTarget,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMediumLow
+        ),
+        label = "EqViewModeRotation"
+    )
+
     var showAutoEqDialog by remember { mutableStateOf(false) }
     var showSaveDialog by remember { mutableStateOf(false) }
     var showManageDialog by remember { mutableStateOf(false) }
@@ -179,14 +213,76 @@ fun EqualizerScreen(
             SwitchPreference(
                 title = stringResource(R.string.equalizer_enable),
                 summary = stringResource(R.string.equalizer_enable_summary),
-                checked = equalizerEnabled,
-                onCheckedChange = { audioManager.setEqualizerEnabled(it) }
+                checked = equalizerEnabled && isDolbyActive,
+                onCheckedChange = { audioManager.setEqualizerEnabled(it) },
+                enabled = isDolbyActive
             )
         }
 
-        if (equalizerEnabled) {
-            Spacer(modifier = Modifier.height(16.dp))
+        // Dolby Engine Dependency Warning Card
+        if (!isDolbyActive) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 10.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFFF9800).copy(alpha = 0.2f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "!",
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Black,
+                            color = Color(0xFFFF9800)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.equalizer_dolby_required_warning),
+                            fontSize = 13.sp,
+                            color = MiuixTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(MiuixTheme.colorScheme.primary)
+                                .clickable {
+                                    audioManager.setEffectMode(EffectMode.DOLBY)
+                                }
+                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                text = stringResource(R.string.switch_to_dolby),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MiuixTheme.colorScheme.onPrimary
+                            )
+                        }
+                    }
+                }
+            }
+        }
 
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // All Equalizer Features: Always visible, greyed out and inoperable when disabled
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .alpha(if (isInteractive) 1f else 0.38f)
+        ) {
             // Presets Selection Header with Save and Manage Buttons
             Row(
                 modifier = Modifier
@@ -208,14 +304,14 @@ fun EqualizerScreen(
                         modifier = Modifier
                             .clip(RoundedCornerShape(10.dp))
                             .background(MiuixTheme.colorScheme.surfaceContainerHigh)
-                            .clickable { showSaveDialog = true }
+                            .clickable(enabled = isInteractive) { showSaveDialog = true }
                             .padding(horizontal = 10.dp, vertical = 5.dp)
                     ) {
                         Text(
                             text = stringResource(R.string.save_preset),
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = MiuixTheme.colorScheme.primary
+                            color = if (isInteractive) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.outline
                         )
                     }
 
@@ -224,14 +320,14 @@ fun EqualizerScreen(
                         modifier = Modifier
                             .clip(RoundedCornerShape(10.dp))
                             .background(MiuixTheme.colorScheme.surfaceContainerHigh)
-                            .clickable { showManageDialog = true }
+                            .clickable(enabled = isInteractive) { showManageDialog = true }
                             .padding(horizontal = 10.dp, vertical = 5.dp)
                     ) {
                         Text(
                             text = stringResource(R.string.manage_presets),
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = MiuixTheme.colorScheme.primary
+                            color = if (isInteractive) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.outline
                         )
                     }
                 }
@@ -257,7 +353,7 @@ fun EqualizerScreen(
                                 color = if (isSelected) MiuixTheme.colorScheme.primary else Color.Transparent,
                                 shape = RoundedCornerShape(18.dp)
                             )
-                            .clickable {
+                            .clickable(enabled = isInteractive) {
                                 audioManager.setEqualizerPreset(preset.name)
                             }
                     ) {
@@ -338,7 +434,7 @@ fun EqualizerScreen(
                                 color = if (isSelected) MiuixTheme.colorScheme.primary else Color.Transparent,
                                 shape = RoundedCornerShape(18.dp)
                             )
-                            .clickable {
+                            .clickable(enabled = isInteractive) {
                                 audioManager.setEqualizerPreset(customName)
                             }
                     ) {
@@ -407,7 +503,7 @@ fun EqualizerScreen(
 
             Spacer(modifier = Modifier.height(18.dp))
 
-            // Frequency Response Section with View Switcher (Vertical Sliders vs Live Graph)
+            // Frequency Response Section with Single Animated Rotating Switcher Button
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -422,49 +518,37 @@ fun EqualizerScreen(
                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary
                 )
 
-                // View Mode Toggle Pill
-                Row(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(MiuixTheme.colorScheme.surfaceContainerHigh)
-                        .padding(2.dp),
-                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                // Single Animated Button with rotating/scaling changing icon
+                IconButton(
+                    onClick = {
+                        if (isInteractive) {
+                            viewModeRotationTarget += 180f
+                            viewMode = if (viewMode == EqViewMode.SLIDERS) EqViewMode.LIVE_GRAPH else EqViewMode.SLIDERS
+                        }
+                    },
+                    enabled = isInteractive
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(
-                                if (viewMode == EqViewMode.SLIDERS) MiuixTheme.colorScheme.primary
-                                else Color.Transparent
-                            )
-                            .clickable { viewMode = EqViewMode.SLIDERS }
-                            .padding(horizontal = 10.dp, vertical = 4.dp)
-                    ) {
-                        Text(
-                            text = "Sliders",
-                            fontSize = 12.sp,
-                            fontWeight = if (viewMode == EqViewMode.SLIDERS) FontWeight.Bold else FontWeight.Normal,
-                            color = if (viewMode == EqViewMode.SLIDERS) MiuixTheme.colorScheme.onPrimary
-                            else MiuixTheme.colorScheme.onSurface
-                        )
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(
-                                if (viewMode == EqViewMode.LIVE_GRAPH) MiuixTheme.colorScheme.primary
-                                else Color.Transparent
-                            )
-                            .clickable { viewMode = EqViewMode.LIVE_GRAPH }
-                            .padding(horizontal = 10.dp, vertical = 4.dp)
-                    ) {
-                        Text(
-                            text = "Live Graph",
-                            fontSize = 12.sp,
-                            fontWeight = if (viewMode == EqViewMode.LIVE_GRAPH) FontWeight.Bold else FontWeight.Normal,
-                            color = if (viewMode == EqViewMode.LIVE_GRAPH) MiuixTheme.colorScheme.onPrimary
-                            else MiuixTheme.colorScheme.onSurface
+                    AnimatedContent(
+                        targetState = viewMode,
+                        transitionSpec = {
+                            (fadeIn(animationSpec = tween(220)) + scaleIn(initialScale = 0.6f, animationSpec = tween(220)))
+                                .togetherWith(
+                                    fadeOut(animationSpec = tween(180)) + scaleOut(targetScale = 0.6f, animationSpec = tween(180))
+                                )
+                        },
+                        label = "EqModeIconAnimation"
+                    ) { mode ->
+                        val iconRes = when (mode) {
+                            EqViewMode.SLIDERS -> R.drawable.ic_eq_graph
+                            EqViewMode.LIVE_GRAPH -> R.drawable.ic_eq_sliders
+                        }
+                        Icon(
+                            painter = painterResource(iconRes),
+                            contentDescription = stringResource(R.string.switch_eq_view_mode),
+                            tint = if (isInteractive) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.outline,
+                            modifier = Modifier
+                                .size(24.dp)
+                                .rotate(viewModeRotation)
                         )
                     }
                 }
@@ -485,18 +569,134 @@ fun EqualizerScreen(
                         VerticalEqualizerView(
                             bandGains = bandGains,
                             onGainChange = { index, newGain ->
-                                audioManager.setEqualizerBand(index, newGain)
-                            }
+                                if (isInteractive) {
+                                    audioManager.setEqualizerBand(index, newGain)
+                                }
+                            },
+                            enabled = isInteractive
                         )
                     } else {
                         // Live Frequency Response Curve (like hardware_dolby)
                         InteractiveLiveEqGraph(
                             bandGains = bandGains,
                             onBandGainChange = { index, newGain ->
-                                audioManager.setEqualizerBand(index, newGain)
-                            }
+                                if (isInteractive) {
+                                    audioManager.setEqualizerBand(index, newGain)
+                                }
+                            },
+                            enabled = isInteractive
                         )
                     }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // Audio Enhancers Section (Bass, Mid, Treble, Dialogue, Volume Leveler)
+            Text(
+                text = stringResource(R.string.category_enhancers),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                modifier = Modifier.padding(start = 12.dp, top = 4.dp, bottom = 6.dp)
+            )
+
+            Card(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                // Bass Enhancer
+                SwitchPreference(
+                    title = stringResource(R.string.bass_enhancer),
+                    summary = stringResource(R.string.bass_enhancer_summary),
+                    checked = bassEnhancerEnabled,
+                    onCheckedChange = { audioManager.setBassEnhancerEnabled(it) },
+                    enabled = isInteractive
+                )
+                if (bassEnhancerEnabled) {
+                    SliderPreference(
+                        title = "Bass Boost Intensity",
+                        summary = "$bassEnhancerLevel%",
+                        value = bassEnhancerLevel.toFloat(),
+                        onValueChange = { audioManager.setBassEnhancerLevel(it.toInt()) },
+                        valueRange = 0f..100f,
+                        enabled = isInteractive
+                    )
+                }
+
+                // Mid Enhancer
+                SwitchPreference(
+                    title = stringResource(R.string.mid_enhancer),
+                    summary = stringResource(R.string.mid_enhancer_summary),
+                    checked = midEnhancerEnabled,
+                    onCheckedChange = { audioManager.setMidEnhancerEnabled(it) },
+                    enabled = isInteractive
+                )
+                if (midEnhancerEnabled) {
+                    SliderPreference(
+                        title = "Mid Presence Intensity",
+                        summary = "$midEnhancerLevel%",
+                        value = midEnhancerLevel.toFloat(),
+                        onValueChange = { audioManager.setMidEnhancerLevel(it.toInt()) },
+                        valueRange = 0f..100f,
+                        enabled = isInteractive
+                    )
+                }
+
+                // Treble Enhancer
+                SwitchPreference(
+                    title = stringResource(R.string.treble_enhancer),
+                    summary = stringResource(R.string.treble_enhancer_summary),
+                    checked = trebleEnhancerEnabled,
+                    onCheckedChange = { audioManager.setTrebleEnhancerEnabled(it) },
+                    enabled = isInteractive
+                )
+                if (trebleEnhancerEnabled) {
+                    SliderPreference(
+                        title = "Treble Air & Sparkle",
+                        summary = "$trebleEnhancerLevel%",
+                        value = trebleEnhancerLevel.toFloat(),
+                        onValueChange = { audioManager.setTrebleEnhancerLevel(it.toInt()) },
+                        valueRange = 0f..100f,
+                        enabled = isInteractive
+                    )
+                }
+
+                // Dialogue Enhancer
+                SwitchPreference(
+                    title = stringResource(R.string.dialogue_enhancer),
+                    summary = stringResource(R.string.dialogue_enhancer_summary),
+                    checked = dialogueEnhancerEnabled,
+                    onCheckedChange = { audioManager.setDialogueEnhancerEnabled(it) },
+                    enabled = isInteractive
+                )
+                if (dialogueEnhancerEnabled) {
+                    SliderPreference(
+                        title = "Dialogue Intelligibility",
+                        summary = "$dialogueEnhancerLevel%",
+                        value = dialogueEnhancerLevel.toFloat(),
+                        onValueChange = { audioManager.setDialogueEnhancerLevel(it.toInt()) },
+                        valueRange = 0f..100f,
+                        enabled = isInteractive
+                    )
+                }
+
+                // Volume Leveler
+                SwitchPreference(
+                    title = stringResource(R.string.volume_leveler),
+                    summary = stringResource(R.string.volume_leveler_summary),
+                    checked = volumeLevelerEnabled,
+                    onCheckedChange = { audioManager.setVolumeLevelerEnabled(it) },
+                    enabled = isInteractive
+                )
+                if (volumeLevelerEnabled) {
+                    SliderPreference(
+                        title = "Leveling Dynamic Range",
+                        summary = "$volumeLevelerLevel%",
+                        value = volumeLevelerLevel.toFloat(),
+                        onValueChange = { audioManager.setVolumeLevelerLevel(it.toInt()) },
+                        valueRange = 0f..100f,
+                        enabled = isInteractive
+                    )
                 }
             }
 
@@ -518,43 +718,43 @@ fun EqualizerScreen(
                     ArrowPreference(
                         title = stringResource(R.string.autoeq_active_label),
                         summary = autoEqProfileName ?: "",
-                        onClick = { showAutoEqDialog = true }
+                        onClick = { if (isInteractive) showAutoEqDialog = true }
                     )
                 }
 
                 ArrowPreference(
                     title = stringResource(R.string.autoeq_search_button),
                     summary = stringResource(R.string.autoeq_search_summary),
-                    onClick = { showAutoEqDialog = true }
+                    onClick = { if (isInteractive) showAutoEqDialog = true }
                 )
             }
+        }
 
-            Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(20.dp))
 
-            // Dedicated Reset Section
-            Text(
-                text = stringResource(R.string.category_reset),
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                modifier = Modifier.padding(start = 12.dp, top = 4.dp, bottom = 6.dp)
+        // Dedicated Reset Section - Always visible and active at the bottom
+        Text(
+            text = stringResource(R.string.category_reset),
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium,
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            modifier = Modifier.padding(start = 12.dp, top = 4.dp, bottom = 6.dp)
+        )
+
+        Card(
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            ArrowPreference(
+                title = stringResource(R.string.reset_equalizer_title),
+                summary = stringResource(R.string.reset_equalizer_summary),
+                onClick = { audioManager.resetEqualizer() }
             )
 
-            Card(
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                ArrowPreference(
-                    title = stringResource(R.string.reset_equalizer_title),
-                    summary = stringResource(R.string.reset_equalizer_summary),
-                    onClick = { audioManager.resetEqualizer() }
-                )
-
-                ArrowPreference(
-                    title = stringResource(R.string.reset_dolby_title),
-                    summary = stringResource(R.string.reset_dolby_summary),
-                    onClick = { audioManager.resetDolbyDsp() }
-                )
-            }
+            ArrowPreference(
+                title = stringResource(R.string.reset_dolby_title),
+                summary = stringResource(R.string.reset_dolby_summary),
+                onClick = { audioManager.resetDolbyDsp() }
+            )
         }
 
         // Extra clearance for floating bottom bar
@@ -614,7 +814,8 @@ fun EqualizerScreen(
 @Composable
 fun VerticalEqualizerView(
     bandGains: List<Float>,
-    onGainChange: (index: Int, gainDb: Float) -> Unit
+    onGainChange: (index: Int, gainDb: Float) -> Unit,
+    enabled: Boolean = true
 ) {
     Row(
         modifier = Modifier
@@ -629,6 +830,7 @@ fun VerticalEqualizerView(
                 frequencyLabel = label,
                 gainDb = gain,
                 onGainChange = { newGain -> onGainChange(index, newGain) },
+                enabled = enabled,
                 modifier = Modifier.weight(1f)
             )
         }
@@ -640,6 +842,7 @@ fun VerticalSliderColumn(
     frequencyLabel: String,
     gainDb: Float,
     onGainChange: (Float) -> Unit,
+    enabled: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     val primaryColor = MiuixTheme.colorScheme.primary
@@ -667,11 +870,9 @@ fun VerticalSliderColumn(
 
         Spacer(modifier = Modifier.height(4.dp))
 
-        // Vertical Slider Track
-        Box(
-            modifier = Modifier
-                .width(28.dp)
-                .weight(1f)
+        // Vertical Slider Track with conditional touch input
+        val touchModifier = if (enabled) {
+            Modifier
                 .pointerInput(Unit) {
                     detectVerticalDragGestures { change, _ ->
                         val totalH = size.height.toFloat()
@@ -698,7 +899,14 @@ fun VerticalSliderColumn(
                             onGainChange(rounded)
                         }
                     }
-                },
+                }
+        } else Modifier
+
+        Box(
+            modifier = Modifier
+                .width(28.dp)
+                .weight(1f)
+                .then(touchModifier),
             contentAlignment = Alignment.Center
         ) {
             Canvas(modifier = Modifier.fillMaxSize()) {
@@ -775,7 +983,8 @@ fun VerticalSliderColumn(
 @Composable
 fun InteractiveLiveEqGraph(
     bandGains: List<Float>,
-    onBandGainChange: (index: Int, gainDb: Float) -> Unit
+    onBandGainChange: (index: Int, gainDb: Float) -> Unit,
+    enabled: Boolean = true
 ) {
     val primaryColor = MiuixTheme.colorScheme.primary
     val subTextColor = MiuixTheme.colorScheme.onSurfaceVariantSummary
@@ -790,6 +999,45 @@ fun InteractiveLiveEqGraph(
         }
     }
 
+    val dragModifier = if (enabled) {
+        Modifier.pointerInput(Unit) {
+            detectDragGestures(
+                onDragStart = { offset ->
+                    val width = size.width
+                    val stepX = (width - 48f) / 9f
+                    var closest = -1
+                    var minDist = Float.MAX_VALUE
+                    for (i in 0 until 10) {
+                        val x = 24f + i * stepX
+                        val dist = kotlin.math.abs(offset.x - x)
+                        if (dist < minDist && dist < 60f) {
+                            minDist = dist
+                            closest = i
+                        }
+                    }
+                    draggedIndex = closest
+                },
+                onDrag = { change, _ ->
+                    draggedIndex?.let { index ->
+                        val height = size.height
+                        val cy = height / 2f
+                        val y = change.position.y.coerceIn(10f, height - 10f)
+                        val normalized = (cy - y) / (cy * 0.85f)
+                        val newDb = (normalized * 10f).coerceIn(-10f, 10f)
+                        val rounded = Math.round(newDb * 10f) / 10f
+                        localGains = localGains.toMutableList().apply {
+                            this[index] = rounded
+                        }
+                        onBandGainChange(index, rounded)
+                        change.consume()
+                    }
+                },
+                onDragEnd = { draggedIndex = null },
+                onDragCancel = { draggedIndex = null }
+            )
+        }
+    } else Modifier
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -801,42 +1049,7 @@ fun InteractiveLiveEqGraph(
                 .weight(1f)
                 .clip(RoundedCornerShape(14.dp))
                 .background(trackBgColor.copy(alpha = 0.5f))
-                .pointerInput(Unit) {
-                    detectDragGestures(
-                        onDragStart = { offset ->
-                            val width = size.width
-                            val stepX = (width - 48f) / 9f
-                            var closest = -1
-                            var minDist = Float.MAX_VALUE
-                            for (i in 0 until 10) {
-                                val x = 24f + i * stepX
-                                val dist = kotlin.math.abs(offset.x - x)
-                                if (dist < minDist && dist < 60f) {
-                                    minDist = dist
-                                    closest = i
-                                }
-                            }
-                            draggedIndex = closest
-                        },
-                        onDrag = { change, _ ->
-                            draggedIndex?.let { index ->
-                                val height = size.height
-                                val cy = height / 2f
-                                val y = change.position.y.coerceIn(10f, height - 10f)
-                                val normalized = (cy - y) / (cy * 0.85f)
-                                val newDb = (normalized * 10f).coerceIn(-10f, 10f)
-                                val rounded = Math.round(newDb * 10f) / 10f
-                                localGains = localGains.toMutableList().apply {
-                                    this[index] = rounded
-                                }
-                                onBandGainChange(index, rounded)
-                                change.consume()
-                            }
-                        },
-                        onDragEnd = { draggedIndex = null },
-                        onDragCancel = { draggedIndex = null }
-                    )
-                }
+                .then(dragModifier)
         ) {
             Canvas(modifier = Modifier.fillMaxSize()) {
                 val width = size.width
@@ -1002,8 +1215,11 @@ fun SaveCustomPresetDialog(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(14.dp),
                     colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = MiuixTheme.colorScheme.onSurface,
+                        unfocusedTextColor = MiuixTheme.colorScheme.onSurface,
                         focusedBorderColor = MiuixTheme.colorScheme.primary,
-                        unfocusedBorderColor = MiuixTheme.colorScheme.outline
+                        unfocusedBorderColor = MiuixTheme.colorScheme.outline,
+                        cursorColor = MiuixTheme.colorScheme.primary
                     ),
                     singleLine = true
                 )
@@ -1095,6 +1311,13 @@ fun ManageCustomPresetsDialog(
                             onValueChange = { renameInput = it },
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(14.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = MiuixTheme.colorScheme.onSurface,
+                                unfocusedTextColor = MiuixTheme.colorScheme.onSurface,
+                                focusedBorderColor = MiuixTheme.colorScheme.primary,
+                                unfocusedBorderColor = MiuixTheme.colorScheme.outline,
+                                cursorColor = MiuixTheme.colorScheme.primary
+                            ),
                             singleLine = true
                         )
                         Spacer(modifier = Modifier.height(14.dp))
@@ -1283,8 +1506,11 @@ fun AutoEqSearchDialog(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(16.dp),
                     colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = MiuixTheme.colorScheme.onSurface,
+                        unfocusedTextColor = MiuixTheme.colorScheme.onSurface,
                         focusedBorderColor = MiuixTheme.colorScheme.primary,
-                        unfocusedBorderColor = MiuixTheme.colorScheme.outline
+                        unfocusedBorderColor = MiuixTheme.colorScheme.outline,
+                        cursorColor = MiuixTheme.colorScheme.primary
                     ),
                     singleLine = true
                 )

@@ -58,7 +58,9 @@ class DolbyTileService : TileService() {
                     DolbyProfile.DYNAMIC -> getString(R.string.profile_dynamic)
                     DolbyProfile.MOVIE -> getString(R.string.profile_movie)
                     DolbyProfile.MUSIC -> getString(R.string.profile_music)
+                    DolbyProfile.GAME -> getString(R.string.profile_game)
                     DolbyProfile.VOICE -> getString(R.string.profile_voice)
+                    DolbyProfile.CUSTOM -> getString(R.string.profile_custom)
                 }
             } else {
                 getString(R.string.xiaomi_sound)
