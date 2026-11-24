@@ -31,6 +31,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.puppyfrommars.hellodolby.R
@@ -38,8 +39,8 @@ import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.extended.ChevronForward
 import top.yukonga.miuix.kmp.icon.extended.Ok
-import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 
@@ -81,24 +82,57 @@ fun ContributorsScreen(
                             .padding(16.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Image(
-                            painter = painterResource(R.drawable.avatar_marcmyworld),
-                            contentDescription = "marc avatar",
+                        Box(
                             modifier = Modifier
-                                .size(68.dp)
+                                .size(72.dp)
                                 .clip(CircleShape)
-                                .border(2.dp, MiuixTheme.colorScheme.primary.copy(alpha = 0.6f), CircleShape)
-                        )
+                                .background(
+                                    Brush.radialGradient(
+                                        colors = listOf(
+                                            MiuixTheme.colorScheme.primary.copy(alpha = 0.25f),
+                                            Color.Transparent
+                                        )
+                                    )
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Image(
+                                painter = painterResource(R.drawable.avatar_marcmyworld),
+                                contentDescription = "marc avatar",
+                                modifier = Modifier
+                                    .size(66.dp)
+                                    .clip(CircleShape)
+                                    .border(2.dp, MiuixTheme.colorScheme.primary.copy(alpha = 0.7f), CircleShape)
+                            )
+                        }
 
-                        Spacer(modifier = Modifier.width(16.dp))
+                        Spacer(modifier = Modifier.width(14.dp))
 
                         Column(modifier = Modifier.padding(end = 44.dp)) {
-                            Text(
-                                text = stringResource(R.string.developer_name),
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MiuixTheme.colorScheme.onSurface
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.developer_name),
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MiuixTheme.colorScheme.onSurface
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(MiuixTheme.colorScheme.primary.copy(alpha = 0.14f))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = "Author",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MiuixTheme.colorScheme.primary
+                                    )
+                                }
+                            }
                             Text(
                                 text = stringResource(R.string.developer_handle),
                                 fontSize = 14.sp,
@@ -121,6 +155,11 @@ fun ContributorsScreen(
                             .size(34.dp)
                             .clip(CircleShape)
                             .background(MiuixTheme.colorScheme.surfaceContainerHigh)
+                            .border(
+                                width = 1.dp,
+                                color = MiuixTheme.colorScheme.outline.copy(alpha = 0.2f),
+                                shape = CircleShape
+                            )
                             .clickable {
                                 val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/marcmyworld"))
                                 context.startActivity(intent)
@@ -317,7 +356,7 @@ fun ContributorsScreen(
             Spacer(modifier = Modifier.height(16.dp))
         }
 
-        // Diagnostics Card (opens Debug Info page)
+        // Diagnostics Card (icon-badged tile matching Audio Engine styling)
         item {
             Text(
                 text = stringResource(R.string.category_diagnostics),
@@ -330,11 +369,56 @@ fun ContributorsScreen(
             Card(
                 modifier = Modifier.fillMaxWidth()
             ) {
-                ArrowPreference(
-                    title = stringResource(R.string.debug_info_title),
-                    summary = stringResource(R.string.debug_info_summary),
-                    onClick = onOpenDebugInfo
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onOpenDebugInfo() }
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .background(MiuixTheme.colorScheme.primary.copy(alpha = 0.14f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_bug_report),
+                            contentDescription = stringResource(R.string.debug_info_title),
+                            tint = MiuixTheme.colorScheme.primary,
+                            modifier = Modifier.size(19.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(14.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.debug_info_title),
+                            fontSize = 15.5.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MiuixTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = stringResource(R.string.debug_info_summary),
+                            fontSize = 12.sp,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(10.dp))
+
+                    Icon(
+                        imageVector = MiuixIcons.ChevronForward,
+                        contentDescription = null,
+                        tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
             }
 
             // Extra clearance for floating bottom bar
