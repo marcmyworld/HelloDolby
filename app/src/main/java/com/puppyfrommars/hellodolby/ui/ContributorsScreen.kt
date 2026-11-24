@@ -30,14 +30,12 @@ import com.puppyfrommars.hellodolby.R
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.preference.ArrowPreference
-import top.yukonga.miuix.kmp.preference.RadioButtonPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
 fun ContributorsScreen(
     padding: PaddingValues,
-    themeMode: AppThemeMode,
-    onThemeChange: (AppThemeMode) -> Unit
+    onOpenDebugInfo: () -> Unit
 ) {
     val context = LocalContext.current
     val scrollState = rememberScrollState()
@@ -126,43 +124,9 @@ fun ContributorsScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Appearance & Theme Card
+        // Diagnostics Card (opens Debug Info page)
         Text(
-            text = stringResource(R.string.category_appearance),
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Medium,
-            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-            modifier = Modifier.padding(start = 12.dp, top = 8.dp, bottom = 8.dp)
-        )
-
-        Card(
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            RadioButtonPreference(
-                title = stringResource(R.string.theme_mode_system),
-                summary = stringResource(R.string.theme_mode_system_summary),
-                selected = themeMode == AppThemeMode.SYSTEM,
-                onClick = { onThemeChange(AppThemeMode.SYSTEM) }
-            )
-            RadioButtonPreference(
-                title = stringResource(R.string.theme_mode_light),
-                summary = stringResource(R.string.theme_mode_light_summary),
-                selected = themeMode == AppThemeMode.LIGHT,
-                onClick = { onThemeChange(AppThemeMode.LIGHT) }
-            )
-            RadioButtonPreference(
-                title = stringResource(R.string.theme_mode_dark),
-                summary = stringResource(R.string.theme_mode_dark_summary),
-                selected = themeMode == AppThemeMode.DARK,
-                onClick = { onThemeChange(AppThemeMode.DARK) }
-            )
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Application Details Card
-        Text(
-            text = stringResource(R.string.project_info),
+            text = stringResource(R.string.category_diagnostics),
             fontSize = 14.sp,
             fontWeight = FontWeight.Medium,
             color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
@@ -173,43 +137,9 @@ fun ContributorsScreen(
             modifier = Modifier.fillMaxWidth()
         ) {
             ArrowPreference(
-                title = stringResource(R.string.package_name_label),
-                summary = stringResource(R.string.package_name_value),
-                onClick = {}
-            )
-            ArrowPreference(
-                title = stringResource(R.string.app_version_label),
-                summary = stringResource(R.string.app_version_value),
-                onClick = {}
-            )
-            ArrowPreference(
-                title = stringResource(R.string.device_info_label),
-                summary = "${android.os.Build.MANUFACTURER.replaceFirstChar { it.uppercase() }} ${android.os.Build.MODEL} (${android.os.Build.DEVICE})",
-                onClick = {}
-            )
-            ArrowPreference(
-                title = stringResource(R.string.github_repo_label),
-                summary = "https://github.com/marcmyworld/HelloDolby",
-                onClick = {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/marcmyworld/HelloDolby"))
-                    context.startActivity(intent)
-                }
-            )
-            ArrowPreference(
-                title = stringResource(R.string.design_system_label),
-                summary = stringResource(R.string.design_system_value),
-                onClick = {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/compose-miuix-ui/miuix"))
-                    context.startActivity(intent)
-                }
-            )
-            ArrowPreference(
-                title = stringResource(R.string.license_label),
-                summary = stringResource(R.string.license_value),
-                onClick = {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.apache.org/licenses/LICENSE-2.0"))
-                    context.startActivity(intent)
-                }
+                title = stringResource(R.string.debug_info_title),
+                summary = stringResource(R.string.debug_info_summary),
+                onClick = onOpenDebugInfo
             )
         }
 

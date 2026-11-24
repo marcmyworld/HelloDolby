@@ -5,6 +5,7 @@
 
 package com.puppyfrommars.hellodolby.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
@@ -60,6 +61,7 @@ import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.ToolbarPosition
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.icon.extended.Info
 import top.yukonga.miuix.kmp.icon.extended.Music
 import top.yukonga.miuix.kmp.icon.extended.Ok
@@ -129,7 +131,13 @@ fun MainScreen(
     onThemeChange: (AppThemeMode) -> Unit
 ) {
     var currentTab by rememberSaveable { mutableStateOf(ScreenTab.EFFECTS) }
+    var showDebugInfo by rememberSaveable { mutableStateOf(false) }
     var rotationTarget by rememberSaveable { mutableFloatStateOf(0f) }
+
+    BackHandler(enabled = showDebugInfo) {
+        showDebugInfo = false
+    }
+
     val rotation by animateFloatAsState(
         targetValue = rotationTarget,
         animationSpec = spring(
@@ -144,79 +152,100 @@ fun MainScreen(
         onThemeChange(newMode)
     }
 
+    val isOnDebugPage = currentTab == ScreenTab.CONTRIBUTORS && showDebugInfo
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = when (currentTab) {
-                    ScreenTab.EFFECTS -> stringResource(R.string.tab_audio_engine)
-                    ScreenTab.EQUALIZER -> stringResource(R.string.tab_fine_tune)
-                    ScreenTab.CONTRIBUTORS -> stringResource(R.string.tab_about)
+                title = if (isOnDebugPage) {
+                    stringResource(R.string.debug_info_title)
+                } else {
+                    when (currentTab) {
+                        ScreenTab.EFFECTS -> stringResource(R.string.tab_audio_engine)
+                        ScreenTab.EQUALIZER -> stringResource(R.string.tab_fine_tune)
+                        ScreenTab.CONTRIBUTORS -> stringResource(R.string.tab_about)
+                    }
+                },
+                navigationIcon = {
+                    if (isOnDebugPage) {
+                        IconButton(onClick = { showDebugInfo = false }) {
+                            Icon(
+                                imageVector = MiuixIcons.Back,
+                                contentDescription = "Back",
+                                tint = MiuixTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
                 },
                 actions = {
-                    IconButton(
-                        onClick = {
-                            handleThemeChange(themeMode.next())
-                        }
-                    ) {
-                        AnimatedContent(
-                            targetState = themeMode,
-                            transitionSpec = {
-                                (fadeIn(animationSpec = tween(220)) + scaleIn(initialScale = 0.6f, animationSpec = tween(220)))
-                                    .togetherWith(
-                                        fadeOut(animationSpec = tween(180)) + scaleOut(targetScale = 0.6f, animationSpec = tween(180))
-                                    )
-                            },
-                            label = "ThemeIconAnimation"
-                        ) { mode ->
-                            val iconRes = when (mode) {
-                                AppThemeMode.LIGHT -> R.drawable.ic_theme_light
-                                AppThemeMode.DARK -> R.drawable.ic_theme_dark
-                                AppThemeMode.SYSTEM -> R.drawable.ic_theme_auto
+                    if (!isOnDebugPage) {
+                        IconButton(
+                            onClick = {
+                                handleThemeChange(themeMode.next())
                             }
-                            val desc = when (mode) {
-                                AppThemeMode.LIGHT -> stringResource(R.string.theme_mode_light)
-                                AppThemeMode.DARK -> stringResource(R.string.theme_mode_dark)
-                                AppThemeMode.SYSTEM -> stringResource(R.string.theme_mode_system)
+                        ) {
+                            AnimatedContent(
+                                targetState = themeMode,
+                                transitionSpec = {
+                                    (fadeIn(animationSpec = tween(220)) + scaleIn(initialScale = 0.6f, animationSpec = tween(220)))
+                                        .togetherWith(
+                                            fadeOut(animationSpec = tween(180)) + scaleOut(targetScale = 0.6f, animationSpec = tween(180))
+                                        )
+                                },
+                                label = "ThemeIconAnimation"
+                            ) { mode ->
+                                val iconRes = when (mode) {
+                                    AppThemeMode.LIGHT -> R.drawable.ic_theme_light
+                                    AppThemeMode.DARK -> R.drawable.ic_theme_dark
+                                    AppThemeMode.SYSTEM -> R.drawable.ic_theme_auto
+                                }
+                                val desc = when (mode) {
+                                    AppThemeMode.LIGHT -> stringResource(R.string.theme_light)
+                                    AppThemeMode.DARK -> stringResource(R.string.theme_dark)
+                                    AppThemeMode.SYSTEM -> stringResource(R.string.theme_system)
+                                }
+                                Icon(
+                                    painter = painterResource(iconRes),
+                                    contentDescription = desc,
+                                    tint = MiuixTheme.colorScheme.onSurface,
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .rotate(rotation)
+                                )
                             }
-                            Icon(
-                                painter = painterResource(iconRes),
-                                contentDescription = desc,
-                                tint = MiuixTheme.colorScheme.onSurface,
-                                modifier = Modifier
-                                    .size(24.dp)
-                                    .rotate(rotation)
-                            )
                         }
                     }
                 }
             )
         },
         floatingToolbar = {
-            FloatingNavigationBar(
-                color = MiuixTheme.colorScheme.surfaceContainer.copy(alpha = 0.82f),
-                shadowElevation = 12.dp,
-                cornerRadius = 32.dp,
-                horizontalOutSidePadding = 24.dp,
-                showDivider = false
-            ) {
-                FloatingNavigationBarItem(
-                    selected = currentTab == ScreenTab.EFFECTS,
-                    onClick = { currentTab = ScreenTab.EFFECTS },
-                    icon = MiuixIcons.Music,
-                    label = stringResource(R.string.tab_audio_engine)
-                )
-                FloatingNavigationBarItem(
-                    selected = currentTab == ScreenTab.EQUALIZER,
-                    onClick = { currentTab = ScreenTab.EQUALIZER },
-                    icon = MiuixIcons.Tune,
-                    label = stringResource(R.string.tab_fine_tune)
-                )
-                FloatingNavigationBarItem(
-                    selected = currentTab == ScreenTab.CONTRIBUTORS,
-                    onClick = { currentTab = ScreenTab.CONTRIBUTORS },
-                    icon = MiuixIcons.Info,
-                    label = stringResource(R.string.tab_about)
-                )
+            if (!isOnDebugPage) {
+                FloatingNavigationBar(
+                    color = MiuixTheme.colorScheme.surfaceContainer.copy(alpha = 0.82f),
+                    shadowElevation = 12.dp,
+                    cornerRadius = 32.dp,
+                    horizontalOutSidePadding = 24.dp,
+                    showDivider = false
+                ) {
+                    FloatingNavigationBarItem(
+                        selected = currentTab == ScreenTab.EFFECTS,
+                        onClick = { currentTab = ScreenTab.EFFECTS },
+                        icon = MiuixIcons.Music,
+                        label = stringResource(R.string.tab_audio_engine)
+                    )
+                    FloatingNavigationBarItem(
+                        selected = currentTab == ScreenTab.EQUALIZER,
+                        onClick = { currentTab = ScreenTab.EQUALIZER },
+                        icon = MiuixIcons.Tune,
+                        label = stringResource(R.string.tab_fine_tune)
+                    )
+                    FloatingNavigationBarItem(
+                        selected = currentTab == ScreenTab.CONTRIBUTORS,
+                        onClick = { currentTab = ScreenTab.CONTRIBUTORS },
+                        icon = MiuixIcons.Info,
+                        label = stringResource(R.string.tab_about)
+                    )
+                }
             }
         },
         floatingToolbarPosition = ToolbarPosition.BottomCenter
@@ -224,7 +253,16 @@ fun MainScreen(
         when (currentTab) {
             ScreenTab.EFFECTS -> EffectsTab(audioManager, padding)
             ScreenTab.EQUALIZER -> EqualizerScreen(audioManager, padding)
-            ScreenTab.CONTRIBUTORS -> ContributorsScreen(padding, themeMode, handleThemeChange)
+            ScreenTab.CONTRIBUTORS -> {
+                if (showDebugInfo) {
+                    DebugInfoScreen(padding)
+                } else {
+                    ContributorsScreen(
+                        padding = padding,
+                        onOpenDebugInfo = { showDebugInfo = true }
+                    )
+                }
+            }
         }
     }
 }
