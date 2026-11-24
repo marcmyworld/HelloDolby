@@ -1,0 +1,25 @@
+//
+// Copyright (C) 2026 marcmyworld <moviesminister@gmail.com>
+// SPDX-License-Identifier: Apache-2.0
+//
+
+android_app_import {
+    name: "HelloDolby",
+    apk: "prebuilt/HelloDolby.apk",
+    certificate: "platform",
+    dex_preopt: {
+        enabled: false,
+    },
+    privileged: true,
+    system_ext_specific: true,
+    required: [
+        "privapp-permissions-hellodolby.xml",
+    ],
+}
+
+prebuilt_etc {
+    name: "privapp-permissions-hellodolby.xml",
+    sub_dir: "permissions",
+    src: "privapp-permissions-hellodolby.xml",
+    system_ext_specific: true,
+}
