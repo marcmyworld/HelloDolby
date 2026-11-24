@@ -71,6 +71,10 @@
     <string name="theme_system">Theme: Follow System (Material You)</string>
     <string name="theme_light">Theme: Light Mode (Material You)</string>
     <string name="theme_dark">Theme: Dark Mode (Material You)</string>
+    <string name="category_palette">Material You Palette</string>
+    <string name="palette_accent_label">Accent Color</string>
+    <string name="palette_accent_summary">Follow system wallpaper colors or pick a custom Monet seed</string>
+    <string name="palette_style_label">Tonal Style</string>
     <string name="category_diagnostics">Diagnostics</string>
     <string name="debug_info_title">Debug Info</string>
     <string name="debug_info_summary">Save app logs and view project &amp; device details</string>

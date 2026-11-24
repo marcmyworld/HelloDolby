@@ -128,7 +128,11 @@ enum class ScreenTab {
 fun MainScreen(
     audioManager: AudioEffectManager,
     themeMode: AppThemeMode,
-    onThemeChange: (AppThemeMode) -> Unit
+    onThemeChange: (AppThemeMode) -> Unit,
+    accentColor: AppAccentColor,
+    onAccentChange: (AppAccentColor) -> Unit,
+    paletteStyle: AppPaletteStyle,
+    onPaletteStyleChange: (AppPaletteStyle) -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
     val tabPagerState = rememberPagerState(initialPage = 0, pageCount = { ScreenTab.entries.size })
@@ -279,6 +283,10 @@ fun MainScreen(
                     } else {
                         ContributorsScreen(
                             padding = padding,
+                            accentColor = accentColor,
+                            onAccentChange = onAccentChange,
+                            paletteStyle = paletteStyle,
+                            onPaletteStyleChange = onPaletteStyleChange,
                             onOpenDebugInfo = { showDebugInfo = true }
                         )
                     }
