@@ -7,15 +7,18 @@ package com.puppyfrommars.hellodolby.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -43,6 +46,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -55,9 +59,12 @@ import kotlin.math.absoluteValue
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.FloatingNavigationBar
 import top.yukonga.miuix.kmp.basic.FloatingNavigationBarItem
+import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.Scaffold
+import top.yukonga.miuix.kmp.basic.Slider
+import top.yukonga.miuix.kmp.basic.Switch
 import top.yukonga.miuix.kmp.basic.ToolbarPosition
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.icon.MiuixIcons
@@ -65,18 +72,15 @@ import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.icon.extended.Info
 import top.yukonga.miuix.kmp.icon.extended.Music
 import top.yukonga.miuix.kmp.icon.extended.Ok
-import top.yukonga.miuix.kmp.icon.extended.Theme
 import top.yukonga.miuix.kmp.icon.extended.Tune
-import top.yukonga.miuix.kmp.preference.RadioButtonPreference
-import top.yukonga.miuix.kmp.preference.SliderPreference
-import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 data class DolbyPresetBanner(
     val profile: DolbyProfile,
     val titleRes: Int,
     val subRes: Int,
-    val bannerRes: Int
+    val bannerRes: Int,
+    val iconRes: Int
 )
 
 private val DOLBY_PRESET_BANNERS = listOf(
@@ -84,37 +88,43 @@ private val DOLBY_PRESET_BANNERS = listOf(
         DolbyProfile.DYNAMIC,
         R.string.profile_dynamic,
         R.string.profile_dynamic_summary,
-        R.drawable.preset_banner_dynamic
+        R.drawable.preset_banner_dynamic,
+        R.drawable.ic_preset_dynamic
     ),
     DolbyPresetBanner(
         DolbyProfile.MOVIE,
         R.string.profile_movie,
         R.string.profile_movie_summary,
-        R.drawable.preset_banner_movie
+        R.drawable.preset_banner_movie,
+        R.drawable.ic_preset_movie
     ),
     DolbyPresetBanner(
         DolbyProfile.MUSIC,
         R.string.profile_music,
         R.string.profile_music_summary,
-        R.drawable.preset_banner_music
+        R.drawable.preset_banner_music,
+        R.drawable.ic_preset_music
     ),
     DolbyPresetBanner(
         DolbyProfile.GAME,
         R.string.profile_game,
         R.string.profile_game_summary,
-        R.drawable.preset_banner_game
+        R.drawable.preset_banner_game,
+        R.drawable.ic_preset_game
     ),
     DolbyPresetBanner(
         DolbyProfile.VOICE,
         R.string.profile_voice,
         R.string.profile_voice_summary,
-        R.drawable.preset_banner_voice
+        R.drawable.preset_banner_voice,
+        R.drawable.ic_preset_voice
     ),
     DolbyPresetBanner(
         DolbyProfile.CUSTOM,
         R.string.profile_custom,
         R.string.profile_custom_summary,
-        R.drawable.preset_banner_custom
+        R.drawable.preset_banner_custom,
+        R.drawable.ic_preset_custom
     )
 )
 
@@ -447,7 +457,7 @@ fun EffectsTab(audioManager: AudioEffectManager, padding: PaddingValues) {
 
         Spacer(modifier = Modifier.height(14.dp))
 
-        // Section 1: Effect Engine Selection
+        // Section 1: Effect Engine Selector (Segmented Tile Cards + Animated Footer)
         Text(
             text = stringResource(R.string.category_processing),
             fontSize = 14.sp,
@@ -459,253 +469,418 @@ fun EffectsTab(audioManager: AudioEffectManager, padding: PaddingValues) {
         Card(
             modifier = Modifier.fillMaxWidth()
         ) {
-            RadioButtonPreference(
-                title = stringResource(R.string.dolby_atmos),
-                summary = stringResource(R.string.dolby_summary),
-                selected = effectMode == EffectMode.DOLBY,
-                onClick = {
-                    audioManager.setEffectMode(EffectMode.DOLBY)
-                }
-            )
-            RadioButtonPreference(
-                title = stringResource(R.string.xiaomi_sound),
-                summary = stringResource(R.string.xiaomi_sound_summary),
-                selected = effectMode == EffectMode.MISOUND,
-                onClick = {
-                    audioManager.setEffectMode(EffectMode.MISOUND)
-                }
-            )
-            RadioButtonPreference(
-                title = stringResource(R.string.effect_off),
-                summary = stringResource(R.string.effect_off_summary),
-                selected = effectMode == EffectMode.OFF,
-                onClick = {
-                    audioManager.setEffectMode(EffectMode.OFF)
-                }
-            )
-        }
-
-        // Section 2: Dolby Audio Presets with Spotlight Carousel & Full Profile List
-        if (effectMode == EffectMode.DOLBY) {
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Text(
-                text = stringResource(R.string.category_dolby_preset),
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                modifier = Modifier.padding(start = 12.dp, top = 8.dp, bottom = 8.dp)
-            )
-
-            // Spotlight Pager Carousel: Center item is in spotlight & larger; swipe snaps to center
-            HorizontalPager(
-                state = pagerState,
-                contentPadding = PaddingValues(horizontal = 48.dp),
-                pageSpacing = 14.dp,
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(145.dp)
-            ) { page ->
-                val banner = DOLBY_PRESET_BANNERS[page]
-                val pageOffset = ((pagerState.currentPage - page) + pagerState.currentPageOffsetFraction).absoluteValue
-                val scale = 1f - (pageOffset * 0.12f).coerceIn(0f, 0.12f)
-                val alpha = 1f - (pageOffset * 0.40f).coerceIn(0f, 0.40f)
-                val isCenter = pageOffset < 0.5f
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(135.dp)
-                        .graphicsLayer {
-                            scaleX = scale
-                            scaleY = scale
-                            this.alpha = alpha
-                        }
-                        .clip(RoundedCornerShape(22.dp))
-                        .border(
-                            width = if (isCenter) 2.5.dp else 1.dp,
-                            color = if (isCenter) MiuixTheme.colorScheme.primary else Color.White.copy(alpha = 0.18f),
-                            shape = RoundedCornerShape(22.dp)
-                        )
-                        .clickable {
-                            coroutineScope.launch {
-                                pagerState.animateScrollToPage(page)
-                            }
-                            dolbyProfile = banner.profile
-                            audioManager.setDolbyProfile(banner.profile)
-                        }
+                    .padding(14.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Image(
-                        painter = painterResource(banner.bannerRes),
-                        contentDescription = stringResource(banner.titleRes),
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
+                    val engineOptions = listOf(
+                        Triple(EffectMode.DOLBY, R.string.dolby_atmos, R.drawable.ic_dolby),
+                        Triple(EffectMode.MISOUND, R.string.xiaomi_sound, R.drawable.ic_xiaomi_sound),
+                        Triple(EffectMode.OFF, R.string.engine_banner_off_title, R.drawable.ic_direct_dac)
                     )
+                    engineOptions.forEach { (modeOption, labelRes, iconRes) ->
+                        val isSelected = effectMode == modeOption
+                        val tileBg by animateColorAsState(
+                            targetValue = if (isSelected) {
+                                MiuixTheme.colorScheme.primary.copy(alpha = 0.14f)
+                            } else {
+                                MiuixTheme.colorScheme.surfaceContainerHigh
+                            },
+                            animationSpec = tween(220),
+                            label = "EngineTileBg_${modeOption.id}"
+                        )
+                        val borderColor by animateColorAsState(
+                            targetValue = if (isSelected) {
+                                MiuixTheme.colorScheme.primary
+                            } else {
+                                MiuixTheme.colorScheme.outline.copy(alpha = 0.22f)
+                            },
+                            animationSpec = tween(220),
+                            label = "EngineTileBorder_${modeOption.id}"
+                        )
+                        val iconCircleBg by animateColorAsState(
+                            targetValue = if (isSelected) {
+                                MiuixTheme.colorScheme.primary
+                            } else {
+                                MiuixTheme.colorScheme.surfaceContainer
+                            },
+                            animationSpec = tween(220),
+                            label = "EngineIconBg_${modeOption.id}"
+                        )
+                        val iconTint by animateColorAsState(
+                            targetValue = if (isSelected) {
+                                MiuixTheme.colorScheme.onPrimary
+                            } else {
+                                MiuixTheme.colorScheme.onSurfaceVariantSummary
+                            },
+                            animationSpec = tween(220),
+                            label = "EngineIconTint_${modeOption.id}"
+                        )
 
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(
-                                Brush.verticalGradient(
-                                    colors = listOf(
-                                        Color.Black.copy(alpha = 0.15f),
-                                        Color.Black.copy(alpha = 0.85f)
-                                    )
-                                )
-                            )
-                    )
-
-                    // Center Spotlight Active Check Badge
-                    if (isCenter) {
-                        Box(
+                        Column(
                             modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .padding(10.dp)
-                                .size(24.dp)
-                                .clip(CircleShape)
-                                .background(MiuixTheme.colorScheme.primary),
-                            contentAlignment = Alignment.Center
+                                .weight(1f)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(tileBg)
+                                .border(
+                                    width = if (isSelected) 2.dp else 1.dp,
+                                    color = borderColor,
+                                    shape = RoundedCornerShape(16.dp)
+                                )
+                                .clickable { audioManager.setEffectMode(modeOption) }
+                                .padding(horizontal = 8.dp, vertical = 14.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Icon(
-                                imageVector = MiuixIcons.Ok,
-                                contentDescription = "Selected",
-                                tint = MiuixTheme.colorScheme.onPrimary,
-                                modifier = Modifier.size(16.dp)
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clip(CircleShape)
+                                    .background(iconCircleBg),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    painter = painterResource(iconRes),
+                                    contentDescription = stringResource(labelRes),
+                                    tint = iconTint,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = stringResource(labelRes),
+                                fontSize = 12.5.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isSelected) {
+                                    MiuixTheme.colorScheme.primary
+                                } else {
+                                    MiuixTheme.colorScheme.onSurface
+                                },
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                textAlign = TextAlign.Center
                             )
                         }
                     }
+                }
 
-                    // Preset Title & Summary
-                    Column(
-                        modifier = Modifier
-                            .align(Alignment.BottomStart)
-                            .padding(horizontal = 16.dp, vertical = 12.dp)
+                Spacer(modifier = Modifier.height(12.dp))
+                HorizontalDivider()
+                Spacer(modifier = Modifier.height(10.dp))
+
+                AnimatedContent(
+                    targetState = effectMode,
+                    transitionSpec = { fadeIn(tween(200)).togetherWith(fadeOut(tween(150))) },
+                    label = "EngineSummaryTransition"
+                ) { mode ->
+                    val statusColor = when (mode) {
+                        EffectMode.DOLBY -> Color(0xFF00C853)
+                        EffectMode.MISOUND -> Color(0xFFFFB300)
+                        EffectMode.OFF -> Color(0xFF757575)
+                    }
+                    val summaryRes = when (mode) {
+                        EffectMode.DOLBY -> R.string.dolby_summary
+                        EffectMode.MISOUND -> R.string.xiaomi_sound_summary
+                        EffectMode.OFF -> R.string.effect_off_summary
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = stringResource(banner.titleRes),
-                            fontSize = 17.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(statusColor)
                         )
-                        Spacer(modifier = Modifier.height(2.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = stringResource(banner.subRes),
-                            fontSize = 11.sp,
-                            color = Color.White.copy(alpha = 0.85f),
-                            maxLines = 1
+                            text = stringResource(summaryRes),
+                            fontSize = 12.sp,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
             }
+        }
 
-            Spacer(modifier = Modifier.height(10.dp))
+        // Section 2: Dolby Audio Presets + Creative Audio Enhancers
+        AnimatedVisibility(
+            visible = effectMode == EffectMode.DOLBY,
+            enter = expandVertically(spring(stiffness = Spring.StiffnessMediumLow)) + fadeIn(tween(240)),
+            exit = shrinkVertically(spring(stiffness = Spring.StiffnessMediumLow)) + fadeOut(tween(180))
+        ) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Spacer(modifier = Modifier.height(16.dp))
 
-            // Sleek 1-Tap Preset Filter Chips Row
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                DOLBY_PRESET_BANNERS.forEachIndexed { index, banner ->
-                    val isSelected = dolbyProfile == banner.profile
-                    val chipBg by animateColorAsState(
-                        targetValue = if (isSelected) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.surfaceContainerHigh,
-                        animationSpec = tween(200),
-                        label = "ChipBg_${banner.profile.name}"
-                    )
-                    val chipTextColor by animateColorAsState(
-                        targetValue = if (isSelected) MiuixTheme.colorScheme.onPrimary else MiuixTheme.colorScheme.onSurface,
-                        animationSpec = tween(200),
-                        label = "ChipText_${banner.profile.name}"
-                    )
+                Text(
+                    text = stringResource(R.string.category_dolby_preset),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    modifier = Modifier.padding(start = 12.dp, top = 8.dp, bottom = 8.dp)
+                )
+
+                // Spotlight Pager Carousel
+                HorizontalPager(
+                    state = pagerState,
+                    contentPadding = PaddingValues(horizontal = 48.dp),
+                    pageSpacing = 14.dp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(145.dp)
+                ) { page ->
+                    val banner = DOLBY_PRESET_BANNERS[page]
+                    val pageOffset = ((pagerState.currentPage - page) + pagerState.currentPageOffsetFraction).absoluteValue
+                    val scale = 1f - (pageOffset * 0.12f).coerceIn(0f, 0.12f)
+                    val alpha = 1f - (pageOffset * 0.40f).coerceIn(0f, 0.40f)
+                    val isCenter = pageOffset < 0.5f
 
                     Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(chipBg)
+                            .fillMaxWidth()
+                            .height(135.dp)
+                            .graphicsLayer {
+                                scaleX = scale
+                                scaleY = scale
+                                this.alpha = alpha
+                            }
+                            .clip(RoundedCornerShape(22.dp))
+                            .border(
+                                width = if (isCenter) 2.5.dp else 1.dp,
+                                color = if (isCenter) MiuixTheme.colorScheme.primary else Color.White.copy(alpha = 0.18f),
+                                shape = RoundedCornerShape(22.dp)
+                            )
                             .clickable {
                                 coroutineScope.launch {
-                                    pagerState.animateScrollToPage(index)
+                                    pagerState.animateScrollToPage(page)
                                 }
                                 dolbyProfile = banner.profile
                                 audioManager.setDolbyProfile(banner.profile)
                             }
-                            .padding(horizontal = 16.dp, vertical = 9.dp),
-                        contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            text = stringResource(banner.titleRes),
-                            fontSize = 13.5.sp,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                            color = chipTextColor
+                        Image(
+                            painter = painterResource(banner.bannerRes),
+                            contentDescription = stringResource(banner.titleRes),
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
                         )
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(
+                                    Brush.verticalGradient(
+                                        colors = listOf(
+                                            Color.Black.copy(alpha = 0.15f),
+                                            Color.Black.copy(alpha = 0.85f)
+                                        )
+                                    )
+                                )
+                        )
+
+                        if (isCenter) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(10.dp)
+                                    .size(24.dp)
+                                    .clip(CircleShape)
+                                    .background(MiuixTheme.colorScheme.primary),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = MiuixIcons.Ok,
+                                    contentDescription = "Selected",
+                                    tint = MiuixTheme.colorScheme.onPrimary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+
+                        Column(
+                            modifier = Modifier
+                                .align(Alignment.BottomStart)
+                                .padding(horizontal = 16.dp, vertical = 12.dp)
+                        ) {
+                            Text(
+                                text = stringResource(banner.titleRes),
+                                fontSize = 17.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = stringResource(banner.subRes),
+                                fontSize = 11.sp,
+                                color = Color.White.copy(alpha = 0.85f),
+                                maxLines = 1
+                            )
+                        }
                     }
                 }
-            }
 
-            Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
-            // Standalone Audio Enhancers Section (Direct Dolby DAP Hardware DSP)
-            Text(
-                text = stringResource(R.string.category_enhancers),
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                modifier = Modifier.padding(start = 12.dp, top = 4.dp, bottom = 8.dp)
-            )
+                // Complete 3x2 Dolby Preset Selector Grid (zero horizontal overflow)
+                Card(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        DOLBY_PRESET_BANNERS.chunked(3).forEachIndexed { rowIdx, rowItems ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                rowItems.forEachIndexed { colIdx, banner ->
+                                    val globalIdx = rowIdx * 3 + colIdx
+                                    val isSelected = dolbyProfile == banner.profile
+                                    val pillBg by animateColorAsState(
+                                        targetValue = if (isSelected) {
+                                            MiuixTheme.colorScheme.primary
+                                        } else {
+                                            MiuixTheme.colorScheme.surfaceContainerHigh
+                                        },
+                                        animationSpec = tween(200),
+                                        label = "PresetGridBg_${banner.profile.name}"
+                                    )
+                                    val pillFg by animateColorAsState(
+                                        targetValue = if (isSelected) {
+                                            MiuixTheme.colorScheme.onPrimary
+                                        } else {
+                                            MiuixTheme.colorScheme.onSurface
+                                        },
+                                        animationSpec = tween(200),
+                                        label = "PresetGridFg_${banner.profile.name}"
+                                    )
 
-            Card(
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                // Dialogue Enhancer
-                SwitchPreference(
-                    title = stringResource(R.string.dialogue_enhancer),
-                    summary = stringResource(R.string.dialogue_enhancer_summary),
-                    checked = dialogueEnhancerEnabled,
-                    onCheckedChange = { audioManager.setDialogueEnhancerEnabled(it) }
-                )
-                if (dialogueEnhancerEnabled) {
-                    SliderPreference(
-                        title = "Dialogue Intelligibility",
-                        summary = "$dialogueEnhancerLevel%",
-                        value = dialogueEnhancerLevel.toFloat(),
-                        onValueChange = { audioManager.setDialogueEnhancerLevel(it.toInt()) },
-                        valueRange = 0f..100f
-                    )
+                                    Row(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(14.dp))
+                                            .background(pillBg)
+                                            .clickable {
+                                                coroutineScope.launch {
+                                                    pagerState.animateScrollToPage(globalIdx)
+                                                }
+                                                dolbyProfile = banner.profile
+                                                audioManager.setDolbyProfile(banner.profile)
+                                            }
+                                            .padding(horizontal = 10.dp, vertical = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.Center
+                                    ) {
+                                        Icon(
+                                            painter = painterResource(banner.iconRes),
+                                            contentDescription = stringResource(banner.titleRes),
+                                            tint = pillFg,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = stringResource(banner.titleRes),
+                                            fontSize = 13.sp,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                            color = pillFg,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
 
-                // Volume Leveler
-                SwitchPreference(
-                    title = stringResource(R.string.volume_leveler),
-                    summary = stringResource(R.string.volume_leveler_summary),
-                    checked = volumeLevelerEnabled,
-                    onCheckedChange = { audioManager.setVolumeLevelerEnabled(it) }
-                )
-                if (volumeLevelerEnabled) {
-                    SliderPreference(
-                        title = "Leveling Dynamic Range",
-                        summary = "$volumeLevelerLevel%",
-                        value = volumeLevelerLevel.toFloat(),
-                        onValueChange = { audioManager.setVolumeLevelerLevel(it.toInt()) },
-                        valueRange = 0f..100f
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Standalone Audio Enhancers Section with Active Counter Badge & Tactile Stepper Controls
+                val activeEnhancersCount = listOf(
+                    dialogueEnhancerEnabled,
+                    volumeLevelerEnabled,
+                    bassEnhancerEnabled
+                ).count { it }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 12.dp, end = 8.dp, top = 4.dp, bottom = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = stringResource(R.string.category_enhancers),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary
                     )
+
+                    AnimatedVisibility(visible = activeEnhancersCount > 0) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(MiuixTheme.colorScheme.primary.copy(alpha = 0.14f))
+                                .padding(horizontal = 8.dp, vertical = 3.dp)
+                        ) {
+                            Text(
+                                text = "$activeEnhancersCount Active",
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MiuixTheme.colorScheme.primary
+                            )
+                        }
+                    }
                 }
 
-                // Bass Enhancer
-                SwitchPreference(
-                    title = stringResource(R.string.bass_enhancer),
-                    summary = stringResource(R.string.bass_enhancer_summary),
-                    checked = bassEnhancerEnabled,
-                    onCheckedChange = { audioManager.setBassEnhancerEnabled(it) }
-                )
-                if (bassEnhancerEnabled) {
-                    SliderPreference(
-                        title = "Bass Boost Intensity",
-                        summary = "$bassEnhancerLevel%",
-                        value = bassEnhancerLevel.toFloat(),
-                        onValueChange = { audioManager.setBassEnhancerLevel(it.toInt()) },
-                        valueRange = 0f..100f
+                Card(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    EnhancerControlTile(
+                        title = stringResource(R.string.dialogue_enhancer),
+                        summary = stringResource(R.string.dialogue_enhancer_summary),
+                        intensityLabel = "Dialogue Intelligibility",
+                        iconRes = R.drawable.ic_preset_voice,
+                        enabled = dialogueEnhancerEnabled,
+                        level = dialogueEnhancerLevel,
+                        onToggle = { audioManager.setDialogueEnhancerEnabled(it) },
+                        onLevelChange = { audioManager.setDialogueEnhancerLevel(it) }
+                    )
+
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+
+                    EnhancerControlTile(
+                        title = stringResource(R.string.volume_leveler),
+                        summary = stringResource(R.string.volume_leveler_summary),
+                        intensityLabel = "Leveling Dynamic Range",
+                        iconRes = R.drawable.ic_direct_dac,
+                        enabled = volumeLevelerEnabled,
+                        level = volumeLevelerLevel,
+                        onToggle = { audioManager.setVolumeLevelerEnabled(it) },
+                        onLevelChange = { audioManager.setVolumeLevelerLevel(it) }
+                    )
+
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+
+                    EnhancerControlTile(
+                        title = stringResource(R.string.bass_enhancer),
+                        summary = stringResource(R.string.bass_enhancer_summary),
+                        intensityLabel = "Bass Boost Intensity",
+                        iconRes = R.drawable.ic_preset_music,
+                        enabled = bassEnhancerEnabled,
+                        level = bassEnhancerLevel,
+                        onToggle = { audioManager.setBassEnhancerEnabled(it) },
+                        onLevelChange = { audioManager.setBassEnhancerLevel(it) }
                     )
                 }
             }
@@ -725,31 +900,200 @@ fun EffectsTab(audioManager: AudioEffectManager, padding: PaddingValues) {
         Card(
             modifier = Modifier.fillMaxWidth()
         ) {
-            // Immersive sound (MiSound 3D Surround & Dolby Spatializer)
-            SwitchPreference(
+            EnhancerControlTile(
                 title = stringResource(R.string.immersive_sound),
                 summary = stringResource(R.string.immersive_sound_summary),
-                checked = spatialEnabled,
-                onCheckedChange = { checked ->
-                    audioManager.setSpatialAudioEnabled(checked)
+                intensityLabel = stringResource(R.string.virtualizer_intensity),
+                iconRes = R.drawable.ic_xiaomi_sound,
+                enabled = spatialEnabled,
+                level = surroundStrength.toInt(),
+                onToggle = { checked -> audioManager.setSpatialAudioEnabled(checked) },
+                onLevelChange = { newLevel ->
+                    surroundStrength = newLevel.toFloat()
+                    audioManager.setSurroundStrength(newLevel * 10)
                 }
             )
-
-            if (spatialEnabled) {
-                SliderPreference(
-                    title = stringResource(R.string.virtualizer_intensity),
-                    summary = "${surroundStrength.toInt()}%",
-                    value = surroundStrength,
-                    onValueChange = { newVal ->
-                        surroundStrength = newVal
-                        audioManager.setSurroundStrength((newVal * 10).toInt())
-                    },
-                    valueRange = 0f..100f
-                )
-            }
         }
 
         // Extra clearance for floating bottom bar
         Spacer(modifier = Modifier.height(100.dp))
+    }
+}
+
+@Composable
+private fun EnhancerControlTile(
+    title: String,
+    summary: String,
+    intensityLabel: String,
+    iconRes: Int,
+    enabled: Boolean,
+    level: Int,
+    onToggle: (Boolean) -> Unit,
+    onLevelChange: (Int) -> Unit
+) {
+    val iconCircleBg by animateColorAsState(
+        targetValue = if (enabled) {
+            MiuixTheme.colorScheme.primary.copy(alpha = 0.16f)
+        } else {
+            MiuixTheme.colorScheme.surfaceContainerHigh
+        },
+        animationSpec = tween(220),
+        label = "EnhancerIconBg_$title"
+    )
+    val iconTint by animateColorAsState(
+        targetValue = if (enabled) {
+            MiuixTheme.colorScheme.primary
+        } else {
+            MiuixTheme.colorScheme.onSurfaceVariantSummary
+        },
+        animationSpec = tween(220),
+        label = "EnhancerIconTint_$title"
+    )
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onToggle(!enabled) }
+            .padding(horizontal = 16.dp, vertical = 14.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(CircleShape)
+                    .background(iconCircleBg),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    painter = painterResource(iconRes),
+                    contentDescription = title,
+                    tint = iconTint,
+                    modifier = Modifier.size(19.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(14.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = title,
+                        fontSize = 15.5.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MiuixTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    if (enabled) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(MiuixTheme.colorScheme.primary.copy(alpha = 0.14f))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = "$level%",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MiuixTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = summary,
+                    fontSize = 12.sp,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Switch(
+                checked = enabled,
+                onCheckedChange = onToggle
+            )
+        }
+
+        AnimatedVisibility(
+            visible = enabled,
+            enter = expandVertically(spring(stiffness = Spring.StiffnessMediumLow)) + fadeIn(tween(200)),
+            exit = shrinkVertically(spring(stiffness = Spring.StiffnessMediumLow)) + fadeOut(tween(150))
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = intensityLabel,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf(25, 50, 75, 100).forEach { step ->
+                            val isStepSelected = kotlin.math.abs(level - step) <= 4
+                            val chipBg by animateColorAsState(
+                                targetValue = if (isStepSelected) {
+                                    MiuixTheme.colorScheme.primary
+                                } else {
+                                    MiuixTheme.colorScheme.surfaceContainerHigh
+                                },
+                                animationSpec = tween(160),
+                                label = "StepBg_${title}_$step"
+                            )
+                            val chipFg by animateColorAsState(
+                                targetValue = if (isStepSelected) {
+                                    MiuixTheme.colorScheme.onPrimary
+                                } else {
+                                    MiuixTheme.colorScheme.onSurfaceVariantSummary
+                                },
+                                animationSpec = tween(160),
+                                label = "StepFg_${title}_$step"
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(chipBg)
+                                    .clickable { onLevelChange(step) }
+                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                            ) {
+                                Text(
+                                    text = "$step%",
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = chipFg
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Slider(
+                    value = level.toFloat(),
+                    onValueChange = { onLevelChange(it.toInt()) },
+                    valueRange = 0f..100f,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        }
     }
 }
