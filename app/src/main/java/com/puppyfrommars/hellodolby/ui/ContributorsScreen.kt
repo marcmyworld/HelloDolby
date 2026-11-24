@@ -12,9 +12,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -31,6 +30,7 @@ import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.utils.overScrollVertical
 
 @Composable
 fun ContributorsScreen(
@@ -38,112 +38,115 @@ fun ContributorsScreen(
     onOpenDebugInfo: () -> Unit
 ) {
     val context = LocalContext.current
-    val scrollState = rememberScrollState()
 
-    Column(
+    LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .padding(padding)
-            .verticalScroll(scrollState)
-            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .overScrollVertical(),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
     ) {
         // Lead Developer Card
-        Text(
-            text = stringResource(R.string.lead_developer),
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Medium,
-            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-            modifier = Modifier.padding(start = 12.dp, top = 8.dp, bottom = 8.dp)
-        )
+        item {
+            Text(
+                text = stringResource(R.string.lead_developer),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                modifier = Modifier.padding(start = 12.dp, top = 8.dp, bottom = 8.dp)
+            )
 
-        Card(
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Box(modifier = Modifier.fillMaxWidth()) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Image(
-                        painter = painterResource(R.drawable.avatar_marcmyworld),
-                        contentDescription = "marc avatar",
+            Card(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    Row(
                         modifier = Modifier
-                            .size(68.dp)
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Image(
+                            painter = painterResource(R.drawable.avatar_marcmyworld),
+                            contentDescription = "marc avatar",
+                            modifier = Modifier
+                                .size(68.dp)
+                                .clip(CircleShape)
+                                .border(2.dp, MiuixTheme.colorScheme.primary.copy(alpha = 0.6f), CircleShape)
+                        )
+
+                        Spacer(modifier = Modifier.width(16.dp))
+
+                        Column(modifier = Modifier.padding(end = 44.dp)) {
+                            Text(
+                                text = stringResource(R.string.developer_name),
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MiuixTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = stringResource(R.string.developer_handle),
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = MiuixTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = stringResource(R.string.developer_bio),
+                                fontSize = 12.sp,
+                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary
+                            )
+                        }
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(12.dp)
+                            .size(34.dp)
                             .clip(CircleShape)
-                            .border(2.dp, MiuixTheme.colorScheme.primary.copy(alpha = 0.6f), CircleShape)
-                    )
-
-                    Spacer(modifier = Modifier.width(16.dp))
-
-                    Column(modifier = Modifier.padding(end = 44.dp)) {
-                        Text(
-                            text = stringResource(R.string.developer_name),
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MiuixTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = stringResource(R.string.developer_handle),
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = MiuixTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = stringResource(R.string.developer_bio),
-                            fontSize = 12.sp,
-                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary
+                            .background(MiuixTheme.colorScheme.surfaceContainerHigh)
+                            .clickable {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/marcmyworld"))
+                                context.startActivity(intent)
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_github),
+                            contentDescription = stringResource(R.string.github_profile),
+                            tint = MiuixTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(18.dp)
                         )
                     }
                 }
-
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(12.dp)
-                        .size(34.dp)
-                        .clip(CircleShape)
-                        .background(MiuixTheme.colorScheme.surfaceContainerHigh)
-                        .clickable {
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/marcmyworld"))
-                            context.startActivity(intent)
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_github),
-                        contentDescription = stringResource(R.string.github_profile),
-                        tint = MiuixTheme.colorScheme.onSurface,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
             }
-        }
 
-        Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(16.dp))
+        }
 
         // Diagnostics Card (opens Debug Info page)
-        Text(
-            text = stringResource(R.string.category_diagnostics),
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Medium,
-            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-            modifier = Modifier.padding(start = 12.dp, top = 8.dp, bottom = 8.dp)
-        )
-
-        Card(
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            ArrowPreference(
-                title = stringResource(R.string.debug_info_title),
-                summary = stringResource(R.string.debug_info_summary),
-                onClick = onOpenDebugInfo
+        item {
+            Text(
+                text = stringResource(R.string.category_diagnostics),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                modifier = Modifier.padding(start = 12.dp, top = 8.dp, bottom = 8.dp)
             )
-        }
 
-        // Extra clearance for floating bottom bar
-        Spacer(modifier = Modifier.height(100.dp))
+            Card(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                ArrowPreference(
+                    title = stringResource(R.string.debug_info_title),
+                    summary = stringResource(R.string.debug_info_summary),
+                    onClick = onOpenDebugInfo
+                )
+            }
+
+            // Extra clearance for floating bottom bar
+            Spacer(modifier = Modifier.height(100.dp))
+        }
     }
 }

@@ -20,8 +20,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
@@ -38,6 +37,7 @@ import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.utils.overScrollVertical
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -46,7 +46,6 @@ import java.util.Locale
 fun DebugInfoScreen(padding: PaddingValues) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    val scrollState = rememberScrollState()
 
     val saveLogsLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("text/plain")
@@ -66,97 +65,101 @@ fun DebugInfoScreen(padding: PaddingValues) {
         }
     }
 
-    Column(
+    LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .padding(padding)
-            .verticalScroll(scrollState)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .overScrollVertical(),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.SpaceBetween
     ) {
         // Top: Save Logs
-        Column(modifier = Modifier.fillMaxWidth()) {
-            Text(
-                text = stringResource(R.string.category_logs),
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                modifier = Modifier.padding(start = 12.dp, top = 8.dp, bottom = 8.dp)
-            )
-
-            Card(
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                ArrowPreference(
-                    title = stringResource(R.string.save_logs_title),
-                    summary = stringResource(R.string.save_logs_summary),
-                    onClick = {
-                        val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
-                        saveLogsLauncher.launch("hellodolby-logs-$stamp.txt")
-                    }
+        item {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = stringResource(R.string.category_logs),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    modifier = Modifier.padding(start = 12.dp, top = 8.dp, bottom = 8.dp)
                 )
+
+                Card(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    ArrowPreference(
+                        title = stringResource(R.string.save_logs_title),
+                        summary = stringResource(R.string.save_logs_summary),
+                        onClick = {
+                            val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
+                            saveLogsLauncher.launch("hellodolby-logs-$stamp.txt")
+                        }
+                    )
+                }
             }
         }
 
         // Bottom: Project Information
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 24.dp, bottom = 16.dp)
-        ) {
-            Text(
-                text = stringResource(R.string.project_info),
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                modifier = Modifier.padding(start = 12.dp, top = 8.dp, bottom = 8.dp)
-            )
-
-            Card(
-                modifier = Modifier.fillMaxWidth()
+        item {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 24.dp, bottom = 16.dp)
             ) {
-                ArrowPreference(
-                    title = stringResource(R.string.package_name_label),
-                    summary = stringResource(R.string.package_name_value),
-                    onClick = {}
+                Text(
+                    text = stringResource(R.string.project_info),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    modifier = Modifier.padding(start = 12.dp, top = 8.dp, bottom = 8.dp)
                 )
-                ArrowPreference(
-                    title = stringResource(R.string.app_version_label),
-                    summary = stringResource(R.string.app_version_value),
-                    onClick = {}
-                )
-                ArrowPreference(
-                    title = stringResource(R.string.device_info_label),
-                    summary = "${Build.MANUFACTURER.replaceFirstChar { it.uppercase() }} ${Build.MODEL} (${Build.DEVICE})",
-                    onClick = {}
-                )
-                ArrowPreference(
-                    title = stringResource(R.string.github_repo_label),
-                    summary = "https://github.com/marcmyworld/HelloDolby",
-                    onClick = {
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/marcmyworld/HelloDolby"))
-                        context.startActivity(intent)
-                    }
-                )
-                ArrowPreference(
-                    title = stringResource(R.string.design_system_label),
-                    summary = stringResource(R.string.design_system_value),
-                    onClick = {
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/compose-miuix-ui/miuix"))
-                        context.startActivity(intent)
-                    }
-                )
-                ArrowPreference(
-                    title = stringResource(R.string.license_label),
-                    summary = stringResource(R.string.license_value),
-                    onClick = {
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.apache.org/licenses/LICENSE-2.0"))
-                        context.startActivity(intent)
-                    }
-                )
-            }
 
-            Spacer(modifier = Modifier.height(8.dp))
+                Card(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    ArrowPreference(
+                        title = stringResource(R.string.package_name_label),
+                        summary = stringResource(R.string.package_name_value),
+                        onClick = {}
+                    )
+                    ArrowPreference(
+                        title = stringResource(R.string.app_version_label),
+                        summary = stringResource(R.string.app_version_value),
+                        onClick = {}
+                    )
+                    ArrowPreference(
+                        title = stringResource(R.string.device_info_label),
+                        summary = "${Build.MANUFACTURER.replaceFirstChar { it.uppercase() }} ${Build.MODEL} (${Build.DEVICE})",
+                        onClick = {}
+                    )
+                    ArrowPreference(
+                        title = stringResource(R.string.github_repo_label),
+                        summary = "https://github.com/marcmyworld/HelloDolby",
+                        onClick = {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/marcmyworld/HelloDolby"))
+                            context.startActivity(intent)
+                        }
+                    )
+                    ArrowPreference(
+                        title = stringResource(R.string.design_system_label),
+                        summary = stringResource(R.string.design_system_value),
+                        onClick = {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/compose-miuix-ui/miuix"))
+                            context.startActivity(intent)
+                        }
+                    )
+                    ArrowPreference(
+                        title = stringResource(R.string.license_label),
+                        summary = stringResource(R.string.license_value),
+                        onClick = {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.apache.org/licenses/LICENSE-2.0"))
+                            context.startActivity(intent)
+                        }
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+            }
         }
     }
 }

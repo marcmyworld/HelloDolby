@@ -130,7 +130,9 @@ fun MainScreen(
     themeMode: AppThemeMode,
     onThemeChange: (AppThemeMode) -> Unit
 ) {
-    var currentTab by rememberSaveable { mutableStateOf(ScreenTab.EFFECTS) }
+    val coroutineScope = rememberCoroutineScope()
+    val tabPagerState = rememberPagerState(initialPage = 0, pageCount = { ScreenTab.entries.size })
+    val currentTab = ScreenTab.entries[tabPagerState.currentPage]
     var showDebugInfo by rememberSaveable { mutableStateOf(false) }
     var rotationTarget by rememberSaveable { mutableFloatStateOf(0f) }
 
@@ -229,19 +231,31 @@ fun MainScreen(
                 ) {
                     FloatingNavigationBarItem(
                         selected = currentTab == ScreenTab.EFFECTS,
-                        onClick = { currentTab = ScreenTab.EFFECTS },
+                        onClick = {
+                            coroutineScope.launch {
+                                tabPagerState.animateScrollToPage(ScreenTab.EFFECTS.ordinal)
+                            }
+                        },
                         icon = MiuixIcons.Music,
                         label = stringResource(R.string.tab_audio_engine)
                     )
                     FloatingNavigationBarItem(
                         selected = currentTab == ScreenTab.EQUALIZER,
-                        onClick = { currentTab = ScreenTab.EQUALIZER },
+                        onClick = {
+                            coroutineScope.launch {
+                                tabPagerState.animateScrollToPage(ScreenTab.EQUALIZER.ordinal)
+                            }
+                        },
                         icon = MiuixIcons.Tune,
                         label = stringResource(R.string.tab_fine_tune)
                     )
                     FloatingNavigationBarItem(
                         selected = currentTab == ScreenTab.CONTRIBUTORS,
-                        onClick = { currentTab = ScreenTab.CONTRIBUTORS },
+                        onClick = {
+                            coroutineScope.launch {
+                                tabPagerState.animateScrollToPage(ScreenTab.CONTRIBUTORS.ordinal)
+                            }
+                        },
                         icon = MiuixIcons.Info,
                         label = stringResource(R.string.tab_about)
                     )
@@ -250,17 +264,24 @@ fun MainScreen(
         },
         floatingToolbarPosition = ToolbarPosition.BottomCenter
     ) { padding ->
-        when (currentTab) {
-            ScreenTab.EFFECTS -> EffectsTab(audioManager, padding)
-            ScreenTab.EQUALIZER -> EqualizerScreen(audioManager, padding)
-            ScreenTab.CONTRIBUTORS -> {
-                if (showDebugInfo) {
-                    DebugInfoScreen(padding)
-                } else {
-                    ContributorsScreen(
-                        padding = padding,
-                        onOpenDebugInfo = { showDebugInfo = true }
-                    )
+        HorizontalPager(
+            state = tabPagerState,
+            userScrollEnabled = !isOnDebugPage,
+            beyondViewportPageCount = 1,
+            modifier = Modifier.fillMaxSize()
+        ) { page ->
+            when (ScreenTab.entries[page]) {
+                ScreenTab.EFFECTS -> EffectsTab(audioManager, padding)
+                ScreenTab.EQUALIZER -> EqualizerScreen(audioManager, padding)
+                ScreenTab.CONTRIBUTORS -> {
+                    if (showDebugInfo) {
+                        DebugInfoScreen(padding)
+                    } else {
+                        ContributorsScreen(
+                            padding = padding,
+                            onOpenDebugInfo = { showDebugInfo = true }
+                        )
+                    }
                 }
             }
         }
