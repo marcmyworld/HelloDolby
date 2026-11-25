@@ -5,11 +5,14 @@
 
 package com.puppyfrommars.hellodolby.ui
 
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Process
+import android.provider.Settings
 import android.widget.Toast
+import com.puppyfrommars.hellodolby.audio.AudioEffectManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -69,7 +72,7 @@ fun DebugInfoScreen(padding: PaddingValues) {
         coroutineScope.launch {
             val saved = withContext(Dispatchers.IO) {
                 runCatching {
-                    val logs = collectAppLogs(context.packageName)
+                    val logs = collectAppLogs(context)
                     context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { writer ->
                         writer.write(logs)
                     } ?: error("Unable to open output stream")
@@ -306,15 +309,33 @@ private fun InfoLinkRow(
     }
 }
 
-private fun collectAppLogs(packageName: String): String {
+private fun collectAppLogs(context: Context): String {
     val header = buildString {
         appendLine("=== HelloDolby Debug Logs ===")
         appendLine("Timestamp: ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss z", Locale.US).format(Date())}")
-        appendLine("Package: $packageName")
+        appendLine("Package: ${context.packageName}")
         appendLine("Device: ${Build.MANUFACTURER} ${Build.MODEL} (${Build.DEVICE})")
         appendLine("Android SDK: ${Build.VERSION.SDK_INT} (${Build.VERSION.RELEASE})")
         appendLine("Process PID: ${Process.myPid()}")
+        val impl = runCatching {
+            Settings.Global.getString(context.contentResolver, "effect_implementer")
+        }.getOrNull()
+        appendLine("effect_implementer: ${impl ?: "<unset>"}")
+        listOf(
+            "persist.vendor.audio.misound.disable",
+            "persist.vendor.audio.3dsurround.enable",
+            "persist.vendor.audio.sfx.hd.eq"
+        ).forEach { prop ->
+            val value = runCatching {
+                ProcessBuilder("getprop", prop).start().inputStream.bufferedReader().use { it.readText().trim() }
+            }.getOrNull()
+            appendLine("$prop: ${value?.ifEmpty { "<unset>" } ?: "<error>"}")
+        }
         appendLine()
+        appendLine(
+            runCatching { AudioEffectManager.getInstance(context).verifyHalStatus() }
+                .getOrElse { "HAL probe error: ${it.message}" }
+        )
     }
     val logBody = runCatching {
         val process = ProcessBuilder("logcat", "-d", "--pid=${Process.myPid()}")

@@ -10,16 +10,5 @@ android_app_import {
     dex_preopt: {
         enabled: false,
     },
-    privileged: true,
-    system_ext_specific: true,
-    required: [
-        "privapp-permissions-hellodolby.xml",
-    ],
-}
-
-prebuilt_etc {
-    name: "privapp-permissions-hellodolby.xml",
-    sub_dir: "permissions",
-    src: "privapp-permissions-hellodolby.xml",
     system_ext_specific: true,
 }

@@ -1,0 +1,9 @@
+# Keep HelloDolby audio HAL bridge and reflective Android SDK hooks
+-keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod
+-keep class com.puppyfrommars.hellodolby.audio.** { *; }
+-keep class com.puppyfrommars.hellodolby.data.** { *; }
+-keep class com.puppyfrommars.hellodolby.service.** { *; }
+-dontwarn android.os.ServiceManager
+-dontwarn android.media.Spatializer
+-dontwarn android.media.audiofx.AudioEffect
+-dontwarn java.lang.invoke.StringConcatFactory

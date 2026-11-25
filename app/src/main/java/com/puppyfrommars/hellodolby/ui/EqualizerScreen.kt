@@ -55,9 +55,12 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.puppyfrommars.hellodolby.R
 import com.puppyfrommars.hellodolby.audio.AudioEffectManager
+import com.puppyfrommars.hellodolby.audio.DolbyProfile
 import com.puppyfrommars.hellodolby.audio.EffectMode
+import com.puppyfrommars.hellodolby.audio.IeqPreset
 import com.puppyfrommars.hellodolby.data.autoeq.AutoEqIndexEntry
 import com.puppyfrommars.hellodolby.data.autoeq.AutoEqRepository
+import com.puppyfrommars.hellodolby.data.device.AudioDeviceSnapshot
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
@@ -107,7 +110,8 @@ enum class EqViewMode {
 @Composable
 fun EqualizerScreen(
     audioManager: AudioEffectManager,
-    padding: PaddingValues
+    padding: PaddingValues,
+    preciseSliders: Boolean = false
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -116,6 +120,8 @@ fun EqualizerScreen(
     val connectedDevice by audioManager.connectedDeviceState.collectAsState()
     val effectMode by audioManager.effectModeState.collectAsState()
     val equalizerEnabled by audioManager.equalizerEnabledState.collectAsState()
+    val ieqPreset by audioManager.ieqPresetState.collectAsState()
+    val ieqAmount by audioManager.ieqAmountState.collectAsState()
     val bandGains by audioManager.equalizerBandsState.collectAsState()
     val activePreset by audioManager.equalizerPresetState.collectAsState()
     val customPresets by audioManager.customPresetsState.collectAsState()
@@ -123,6 +129,12 @@ fun EqualizerScreen(
 
     val isDolbyActive = effectMode == EffectMode.DOLBY
     val isInteractive = equalizerEnabled && isDolbyActive
+    val activeStatusBadge = when {
+        !isDolbyActive -> "Bypassed"
+        equalizerEnabled -> activePreset
+        ieqPreset != IeqPreset.OFF -> "IEQ: ${ieqPreset.name.lowercase().replaceFirstChar { it.uppercase() }}"
+        else -> "Bypassed"
+    }
 
     var viewMode by remember { mutableStateOf(EqViewMode.LIVE_GRAPH) }
     var viewModeRotationTarget by rememberSaveable { mutableFloatStateOf(0f) }
@@ -190,11 +202,12 @@ fun EqualizerScreen(
                         color = MiuixTheme.colorScheme.onSurfaceVariantSummary
                     )
                 }
+                val badgeActive = isDolbyActive && (equalizerEnabled || ieqPreset != IeqPreset.OFF)
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
                         .background(
-                            if (isInteractive) {
+                            if (badgeActive) {
                                 MiuixTheme.colorScheme.primary.copy(alpha = 0.14f)
                             } else {
                                 MiuixTheme.colorScheme.surfaceContainerHigh
@@ -203,16 +216,183 @@ fun EqualizerScreen(
                         .padding(horizontal = 9.dp, vertical = 4.dp)
                 ) {
                     Text(
-                        text = if (isInteractive) activePreset else "Bypassed",
+                        text = activeStatusBadge,
                         fontSize = 11.5.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = if (isInteractive) {
+                        color = if (badgeActive) {
                             MiuixTheme.colorScheme.primary
                         } else {
                             MiuixTheme.colorScheme.onSurfaceVariantSummary
                         },
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // Intelligent Equalizer (IEQ) Card — Mutually exclusive with Custom 10-band EQ
+        Text(
+            text = stringResource(R.string.category_ieq),
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium,
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            modifier = Modifier.padding(start = 12.dp, top = 4.dp, bottom = 6.dp)
+        )
+
+        val ieqActive = isDolbyActive && ieqPreset != IeqPreset.OFF
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .alpha(if (isDolbyActive) 1f else 0.48f)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.ieq_summary),
+                    fontSize = 12.sp,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                val ieqOptions = listOf(
+                    Triple(IeqPreset.OFF, R.string.ieq_off, "Neutral Flat"),
+                    Triple(IeqPreset.DETAILED, R.string.ieq_detailed, "Crisp Treble"),
+                    Triple(IeqPreset.BALANCED, R.string.ieq_balanced, "Smooth Midrange"),
+                    Triple(IeqPreset.WARM, R.string.ieq_warm, "Rich Low-End")
+                )
+                val effectiveSelectedIeq = if (equalizerEnabled) IeqPreset.OFF else ieqPreset
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    ieqOptions.chunked(2).forEach { rowItems ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            rowItems.forEach { (presetOption, labelRes, subtitleText) ->
+                                val selected = effectiveSelectedIeq == presetOption
+                                val tileBg by animateColorAsState(
+                                    targetValue = if (selected) {
+                                        MiuixTheme.colorScheme.primary.copy(alpha = 0.14f)
+                                    } else {
+                                        MiuixTheme.colorScheme.surfaceContainerHigh
+                                    },
+                                    animationSpec = tween(180),
+                                    label = "IeqCardBg_${presetOption.name}"
+                                )
+                                val borderColor by animateColorAsState(
+                                    targetValue = if (selected) {
+                                        MiuixTheme.colorScheme.primary
+                                    } else {
+                                        MiuixTheme.colorScheme.outline.copy(alpha = 0.16f)
+                                    },
+                                    animationSpec = tween(180),
+                                    label = "IeqCardBorder_${presetOption.name}"
+                                )
+
+                                Column(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .background(tileBg)
+                                        .border(
+                                            width = if (selected) 1.75.dp else 1.dp,
+                                            color = borderColor,
+                                            shape = RoundedCornerShape(14.dp)
+                                        )
+                                        .clickable(enabled = isDolbyActive) {
+                                            audioManager.setIeqPreset(presetOption)
+                                        }
+                                        .padding(horizontal = 12.dp, vertical = 10.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = stringResource(labelRes),
+                                            fontSize = 13.5.sp,
+                                            fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
+                                            color = if (selected) {
+                                                MiuixTheme.colorScheme.primary
+                                            } else {
+                                                MiuixTheme.colorScheme.onSurface
+                                            },
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Box(
+                                            modifier = Modifier
+                                                .size(7.dp)
+                                                .clip(CircleShape)
+                                                .background(
+                                                    if (selected) MiuixTheme.colorScheme.primary
+                                                    else MiuixTheme.colorScheme.outline.copy(alpha = 0.28f)
+                                                )
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    IeqCurveThumbnail(
+                                        preset = presetOption,
+                                        amount = ieqAmount,
+                                        selected = selected,
+                                        accentColor = if (selected) {
+                                            MiuixTheme.colorScheme.primary
+                                        } else {
+                                            MiuixTheme.colorScheme.onSurfaceVariantSummary
+                                        },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(34.dp)
+                                    )
+                                    Spacer(modifier = Modifier.height(5.dp))
+                                    Text(
+                                        text = subtitleText,
+                                        fontSize = 10.5.sp,
+                                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                AnimatedVisibility(
+                    visible = ieqActive && !equalizerEnabled,
+                    enter = expandVertically(spring(stiffness = Spring.StiffnessMediumLow)) + fadeIn(tween(200)),
+                    exit = shrinkVertically(spring(stiffness = Spring.StiffnessMediumLow)) + fadeOut(tween(150))
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 14.dp)
+                    ) {
+                        TactilePercentSlider(
+                            label = stringResource(R.string.ieq_intensity),
+                            level = ieqAmount,
+                            preciseSliders = preciseSliders,
+                            onLevelChange = { audioManager.setIeqAmount(it) }
+                        )
+                    }
+                }
+
+                if (equalizerEnabled && isDolbyActive) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = stringResource(R.string.ieq_conflict_note),
+                        fontSize = 11.5.sp,
+                        color = MiuixTheme.colorScheme.primary
                     )
                 }
             }
@@ -809,127 +989,6 @@ fun EqualizerScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(20.dp))
-
-        // Dedicated Reset Section - Always visible and active at the bottom
-        Text(
-            text = stringResource(R.string.category_reset),
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Medium,
-            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-            modifier = Modifier.padding(start = 12.dp, top = 4.dp, bottom = 6.dp)
-        )
-
-        Card(
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { audioManager.resetEqualizer() }
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(38.dp)
-                        .clip(CircleShape)
-                        .background(MiuixTheme.colorScheme.surfaceContainerHigh),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = MiuixIcons.Refresh,
-                        contentDescription = stringResource(R.string.reset_equalizer_title),
-                        tint = MiuixTheme.colorScheme.primary,
-                        modifier = Modifier.size(19.dp)
-                    )
-                }
-                Spacer(modifier = Modifier.width(14.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(R.string.reset_equalizer_title),
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MiuixTheme.colorScheme.onSurface
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = stringResource(R.string.reset_equalizer_summary),
-                        fontSize = 12.sp,
-                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary
-                    )
-                }
-                Spacer(modifier = Modifier.width(8.dp))
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(MiuixTheme.colorScheme.surfaceContainerHigh)
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                ) {
-                    Text(
-                        text = "0.0 dB",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary
-                    )
-                }
-            }
-
-            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { audioManager.resetDolbyDsp() }
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(38.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xFFE53935).copy(alpha = 0.14f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = MiuixIcons.Delete,
-                        contentDescription = stringResource(R.string.reset_dolby_title),
-                        tint = Color(0xFFE53935),
-                        modifier = Modifier.size(19.dp)
-                    )
-                }
-                Spacer(modifier = Modifier.width(14.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(R.string.reset_dolby_title),
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MiuixTheme.colorScheme.onSurface
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = stringResource(R.string.reset_dolby_summary),
-                        fontSize = 12.sp,
-                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary
-                    )
-                }
-                Spacer(modifier = Modifier.width(8.dp))
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xFFE53935).copy(alpha = 0.12f))
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                ) {
-                    Text(
-                        text = "Factory",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFFE53935)
-                    )
-                }
-            }
-        }
-
         // Extra clearance for floating bottom bar
         Spacer(modifier = Modifier.height(110.dp))
     }
@@ -976,6 +1035,78 @@ fun EqualizerScreen(
             onDelete = { name ->
                 audioManager.deleteCustomPreset(name)
             }
+        )
+    }
+}
+
+@Composable
+private fun IeqCurveThumbnail(
+    preset: IeqPreset,
+    amount: Int,
+    selected: Boolean,
+    accentColor: Color,
+    modifier: Modifier = Modifier
+) {
+    val curvePoints = remember(preset) {
+        when (preset) {
+            IeqPreset.OFF -> List(10) { 0f }
+            IeqPreset.DETAILED -> listOf(0.54f, 0.72f, 0.70f, 0.74f, 0.80f, 0.86f, 0.86f, 0.65f, 0.28f, -0.45f)
+            IeqPreset.BALANCED -> listOf(0.58f, 0.80f, 0.72f, 0.71f, 0.77f, 0.79f, 0.65f, 0.42f, 0.16f, -0.60f)
+            IeqPreset.WARM -> listOf(0.48f, 0.66f, 0.56f, 0.37f, 0.42f, 0.49f, 0.33f, 0.26f, 0.02f, -0.70f)
+        }
+    }
+    val strengthScale = if (preset == IeqPreset.OFF) 0f else if (selected) (0.35f + 0.65f * amount / 100f) else 0.72f
+    val lineColor = if (selected) accentColor else accentColor.copy(alpha = 0.68f)
+
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+        val midY = h * 0.56f
+
+        // Subtle 0 dB baseline reference
+        drawLine(
+            color = accentColor.copy(alpha = 0.22f),
+            start = Offset(0f, midY),
+            end = Offset(w, midY),
+            strokeWidth = 1.dp.toPx()
+        )
+
+        val stepX = w / (curvePoints.size - 1).coerceAtLeast(1)
+        val pts = curvePoints.mapIndexed { idx, v ->
+            val y = (midY - v * strengthScale * (h * 0.42f)).coerceIn(2.dp.toPx(), h - 2.dp.toPx())
+            Offset(idx * stepX, y)
+        }
+
+        val strokePath = Path().apply {
+            moveTo(pts.first().x, pts.first().y)
+            for (i in 0 until pts.size - 1) {
+                val midX = (pts[i].x + pts[i + 1].x) / 2f
+                cubicTo(midX, pts[i].y, midX, pts[i + 1].y, pts[i + 1].x, pts[i + 1].y)
+            }
+        }
+
+        if (preset != IeqPreset.OFF) {
+            val fillPath = Path().apply {
+                addPath(strokePath)
+                lineTo(pts.last().x, midY)
+                lineTo(pts.first().x, midY)
+                close()
+            }
+            drawPath(
+                path = fillPath,
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        lineColor.copy(alpha = if (selected) 0.28f else 0.14f),
+                        Color.Transparent
+                    )
+                )
+            )
+        }
+
+        drawPath(
+            path = strokePath,
+            color = lineColor,
+            style = Stroke(width = if (selected) 2.2.dp.toPx() else 1.7.dp.toPx())
         )
     }
 }
@@ -1788,6 +1919,415 @@ fun AutoEqSearchDialog(
                             .clickable { onDismiss() }
                             .padding(horizontal = 12.dp, vertical = 8.dp)
                     )
+                }
+            }
+        }
+    }
+}
+
+private fun formatSnapshotSummary(snapshot: AudioDeviceSnapshot): String {
+    val modeLabel = when (snapshot.effectMode) {
+        EffectMode.DOLBY.id -> "Dolby • ${DolbyProfile.fromId(snapshot.dolbyProfile).name.lowercase().replaceFirstChar { it.uppercase() }}"
+        EffectMode.MISOUND.id -> "Xiaomi Sound"
+        else -> "Direct DAC"
+    }
+    val eqLabel = if (snapshot.equalizerEnabled) {
+        snapshot.autoEqProfileName ?: snapshot.equalizerPreset
+    } else {
+        "EQ Off"
+    }
+    val spatLabel = if (snapshot.surroundEnabled) "Immersive" else null
+    return listOfNotNull(modeLabel, eqLabel, spatLabel).joinToString(" • ")
+}
+
+@Composable
+fun SavedDeviceProfilesDialog(
+    snapshots: List<AudioDeviceSnapshot>,
+    activeDeviceKey: String,
+    onDismiss: () -> Unit,
+    onDeleteDevice: (String) -> Unit,
+    onDeleteAll: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 520.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(18.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.delete_device_profiles_dialog_title),
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MiuixTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = stringResource(R.string.delete_device_profiles_summary),
+                    fontSize = 12.sp,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary
+                )
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                if (snapshots.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 28.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = stringResource(R.string.no_saved_device_profiles),
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            fontSize = 14.sp
+                        )
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f, fill = false),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(snapshots, key = { it.deviceKey }) { snapshot ->
+                            val isActive = snapshot.deviceKey == activeDeviceKey
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(MiuixTheme.colorScheme.surfaceContainerHigh)
+                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Text(
+                                            text = snapshot.displayName,
+                                            fontSize = 14.5.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MiuixTheme.colorScheme.onSurface,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f, fill = false)
+                                        )
+                                        if (isActive) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(6.dp))
+                                                    .background(MiuixTheme.colorScheme.primary.copy(alpha = 0.14f))
+                                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                                            ) {
+                                                Text(
+                                                    text = "Active",
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = MiuixTheme.colorScheme.primary
+                                                )
+                                            }
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = formatSnapshotSummary(snapshot),
+                                        fontSize = 11.5.sp,
+                                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.width(8.dp))
+
+                                IconButton(onClick = { onDeleteDevice(snapshot.deviceKey) }) {
+                                    Icon(
+                                        imageVector = MiuixIcons.Delete,
+                                        contentDescription = "Delete ${snapshot.displayName}",
+                                        tint = Color(0xFFE53935),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (snapshots.isNotEmpty()) {
+                        Text(
+                            text = "Delete All",
+                            color = Color(0xFFE53935),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.5.sp,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { onDeleteAll() }
+                                .padding(horizontal = 10.dp, vertical = 8.dp)
+                        )
+                    } else {
+                        Spacer(modifier = Modifier.width(1.dp))
+                    }
+
+                    Text(
+                        text = "Close",
+                        color = MiuixTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { onDismiss() }
+                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun RestoreDefaultsConfirmDialog(
+    snapshots: List<AudioDeviceSnapshot>,
+    activeDeviceKey: String,
+    activeDeviceName: String,
+    onDismiss: () -> Unit,
+    onOpenSavedProfiles: () -> Unit,
+    onConfirmResetDevice: (String) -> Unit,
+    onConfirmResetAll: () -> Unit
+) {
+    // null represents "All Devices"; non-null represents a specific deviceKey
+    var selectedTargetKey by remember(activeDeviceKey) { mutableStateOf<String?>(activeDeviceKey) }
+    val targetDevices = remember(snapshots, activeDeviceKey, activeDeviceName) {
+        if (snapshots.any { it.deviceKey == activeDeviceKey }) {
+            snapshots
+        } else {
+            listOf(
+                AudioDeviceSnapshot(
+                    deviceKey = activeDeviceKey,
+                    displayName = activeDeviceName,
+                    effectMode = EffectMode.DOLBY.id,
+                    dolbyProfile = DolbyProfile.DYNAMIC.id,
+                    surroundEnabled = false,
+                    surroundStrength = 500,
+                    equalizerEnabled = false,
+                    equalizerBands = List(10) { 0f },
+                    equalizerPreset = "Flat",
+                    autoEqProfileName = null
+                )
+            ) + snapshots
+        }
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFFF9800).copy(alpha = 0.18f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "!",
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.Black,
+                            color = Color(0xFFFF9800)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        text = stringResource(R.string.restore_defaults_confirm_title),
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MiuixTheme.colorScheme.onSurface
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    text = stringResource(R.string.restore_defaults_confirm_message),
+                    fontSize = 12.5.sp,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    lineHeight = 18.sp
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(MiuixTheme.colorScheme.surfaceContainerHigh)
+                        .clickable { onOpenSavedProfiles() }
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    Text(
+                        text = "${stringResource(R.string.restore_defaults_open_saved_profiles)} →",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MiuixTheme.colorScheme.primary
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                Text(
+                    text = "Reset Scope",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    targetDevices.forEach { dev ->
+                        val isSelected = selectedTargetKey == dev.deviceKey
+                        val isActive = dev.deviceKey == activeDeviceKey
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(
+                                    if (isSelected) {
+                                        MiuixTheme.colorScheme.primary.copy(alpha = 0.14f)
+                                    } else {
+                                        MiuixTheme.colorScheme.surfaceContainerHigh
+                                    }
+                                )
+                                .border(
+                                    width = if (isSelected) 1.5.dp else 1.dp,
+                                    color = if (isSelected) MiuixTheme.colorScheme.primary else Color.Transparent,
+                                    shape = RoundedCornerShape(12.dp)
+                                )
+                                .clickable { selectedTargetKey = dev.deviceKey }
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = if (isActive) "${dev.displayName} (Active)" else dev.displayName,
+                                fontSize = 13.5.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isSelected) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (isSelected) {
+                                Icon(
+                                    imageVector = MiuixIcons.Ok,
+                                    contentDescription = "Selected",
+                                    tint = MiuixTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    val allSelected = selectedTargetKey == null
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(
+                                if (allSelected) {
+                                    Color(0xFFE53935).copy(alpha = 0.14f)
+                                } else {
+                                    MiuixTheme.colorScheme.surfaceContainerHigh
+                                }
+                            )
+                            .border(
+                                width = if (allSelected) 1.5.dp else 1.dp,
+                                color = if (allSelected) Color(0xFFE53935) else Color.Transparent,
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            .clickable { selectedTargetKey = null }
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "All Saved Devices (${targetDevices.size})",
+                            fontSize = 13.5.sp,
+                            fontWeight = if (allSelected) FontWeight.Bold else FontWeight.Medium,
+                            color = if (allSelected) Color(0xFFE53935) else MiuixTheme.colorScheme.onSurface
+                        )
+                        if (allSelected) {
+                            Icon(
+                                imageVector = MiuixIcons.Ok,
+                                contentDescription = "Selected",
+                                tint = Color(0xFFE53935),
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(18.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Cancel",
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 14.sp,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { onDismiss() }
+                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Color(0xFFE53935))
+                            .clickable {
+                                val target = selectedTargetKey
+                                if (target == null) {
+                                    onConfirmResetAll()
+                                } else {
+                                    onConfirmResetDevice(target)
+                                }
+                            }
+                            .padding(horizontal = 14.dp, vertical = 9.dp)
+                    ) {
+                        Text(
+                            text = if (selectedTargetKey == null) "Restore All" else "Restore Device",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.5.sp
+                        )
+                    }
                 }
             }
         }

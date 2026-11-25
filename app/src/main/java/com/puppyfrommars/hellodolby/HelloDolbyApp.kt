@@ -9,7 +9,7 @@ import android.app.Application
 import com.puppyfrommars.hellodolby.audio.AudioEffectManager
 
 /**
- * Application entry point holding the dummy UI state controller until DSP backends are wired.
+ * Application entry point holding the shared [AudioEffectManager] singleton for UI, tile, and boot restore.
  */
 class HelloDolbyApp : Application() {
     lateinit var audioEffectManager: AudioEffectManager

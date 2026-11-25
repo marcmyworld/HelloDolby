@@ -53,8 +53,8 @@ class DolbyTileService : TileService() {
         tile.state = if (isDolby) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            tile.subtitle = if (isDolby) {
-                when (audioManager.getDolbyProfile()) {
+            tile.subtitle = when (currentMode) {
+                EffectMode.DOLBY -> when (audioManager.getDolbyProfile()) {
                     DolbyProfile.DYNAMIC -> getString(R.string.profile_dynamic)
                     DolbyProfile.MOVIE -> getString(R.string.profile_movie)
                     DolbyProfile.MUSIC -> getString(R.string.profile_music)
@@ -62,8 +62,8 @@ class DolbyTileService : TileService() {
                     DolbyProfile.VOICE -> getString(R.string.profile_voice)
                     DolbyProfile.CUSTOM -> getString(R.string.profile_custom)
                 }
-            } else {
-                getString(R.string.xiaomi_sound)
+                EffectMode.MISOUND -> getString(R.string.xiaomi_sound)
+                EffectMode.OFF -> getString(R.string.effect_off)
             }
         }
 

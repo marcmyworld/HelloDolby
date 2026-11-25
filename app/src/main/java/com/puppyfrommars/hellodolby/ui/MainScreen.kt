@@ -5,12 +5,21 @@
 
 package com.puppyfrommars.hellodolby.ui
 
+import android.content.ComponentName
+import android.content.Intent
 import android.graphics.RenderEffect as AndroidRenderEffect
 import android.graphics.RuntimeShader
 import android.graphics.Shader
 import android.os.Build
+import android.provider.Settings as AndroidSettings
 import android.view.HapticFeedbackConstants
 import androidx.activity.compose.BackHandler
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -90,6 +99,7 @@ import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.icon.extended.Info
 import top.yukonga.miuix.kmp.icon.extended.Music
 import top.yukonga.miuix.kmp.icon.extended.Ok
+import top.yukonga.miuix.kmp.icon.extended.Settings
 import top.yukonga.miuix.kmp.icon.extended.Tune
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
@@ -149,6 +159,7 @@ private val DOLBY_PRESET_BANNERS = listOf(
 enum class ScreenTab {
     EFFECTS,
     EQUALIZER,
+    ADVANCED,
     CONTRIBUTORS
 }
 
@@ -200,8 +211,9 @@ fun MainScreen(
                     stringResource(R.string.debug_info_title)
                 } else {
                     when (currentTab) {
-                        ScreenTab.EFFECTS -> stringResource(R.string.tab_audio_engine)
+                        ScreenTab.EFFECTS -> "Audio Engine"
                         ScreenTab.EQUALIZER -> stringResource(R.string.tab_fine_tune)
+                        ScreenTab.ADVANCED -> stringResource(R.string.tab_advanced)
                         ScreenTab.CONTRIBUTORS -> stringResource(R.string.tab_about)
                     }
                 },
@@ -296,7 +308,13 @@ fun MainScreen(
                     padding = padding,
                     preciseSliders = preciseSliders
                 )
-                ScreenTab.EQUALIZER -> EqualizerScreen(audioManager, padding)
+                ScreenTab.EQUALIZER -> EqualizerScreen(audioManager, padding, preciseSliders)
+                ScreenTab.ADVANCED -> AdvancedScreen(
+                    audioManager = audioManager,
+                    padding = padding,
+                    preciseSliders = preciseSliders,
+                    onPreciseSlidersChange = onPreciseSlidersChange
+                )
                 ScreenTab.CONTRIBUTORS -> {
                     if (showDebugInfo) {
                         DebugInfoScreen(padding)
@@ -307,8 +325,6 @@ fun MainScreen(
                             onAccentChange = onAccentChange,
                             paletteStyle = paletteStyle,
                             onPaletteStyleChange = onPaletteStyleChange,
-                            preciseSliders = preciseSliders,
-                            onPreciseSlidersChange = onPreciseSlidersChange,
                             onOpenDebugInfo = { showDebugInfo = true }
                         )
                     }
@@ -412,13 +428,25 @@ private fun FrostedGlassFloatingNavBar(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 24.dp)
+            .padding(horizontal = 16.dp)
             .padding(bottom = bottomMargin),
         contentAlignment = Alignment.Center
     ) {
         Box(
             modifier = Modifier
                 .defaultMinSize(minHeight = 52.dp)
+                .clip(pillShape)
+                .pointerInput(Unit) {
+                    // Absorb any unconsumed taps/drags inside the pill gaps so touches never pass through to cards underneath
+                    awaitPointerEventScope {
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            event.changes.forEach { change ->
+                                if (!change.isConsumed) change.consume()
+                            }
+                        }
+                    }
+                }
                 .onGloballyPositioned { coords ->
                     pillBoundsInRoot = coords.boundsInRoot()
                 }
@@ -484,6 +512,12 @@ private fun FrostedGlassFloatingNavBar(
                     label = stringResource(R.string.tab_fine_tune)
                 )
                 FloatingNavigationBarItem(
+                    selected = currentTab == ScreenTab.ADVANCED,
+                    onClick = { onSelectTab(ScreenTab.ADVANCED) },
+                    icon = MiuixIcons.Settings,
+                    label = stringResource(R.string.tab_advanced)
+                )
+                FloatingNavigationBarItem(
                     selected = currentTab == ScreenTab.CONTRIBUTORS,
                     onClick = { onSelectTab(ScreenTab.CONTRIBUTORS) },
                     icon = MiuixIcons.Info,
@@ -500,14 +534,32 @@ fun EffectsTab(
     padding: PaddingValues,
     preciseSliders: Boolean
 ) {
+    val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val effectMode by audioManager.effectModeState.collectAsState()
-    var dolbyProfile by remember { mutableStateOf(audioManager.getDolbyProfile()) }
+    val dolbyProfile by audioManager.dolbyProfileState.collectAsState()
     val spatialEnabled by audioManager.spatialAudioState.collectAsState()
-    var surroundStrength by remember { mutableFloatStateOf(audioManager.getSurroundStrength() / 10f) }
+    val aospSpatializerActive by audioManager.aospSpatializerActiveState.collectAsState()
+    val surroundStrengthRaw by audioManager.surroundStrengthState.collectAsState()
+    val surroundStrength = surroundStrengthRaw / 10f
+
+    DisposableEffect(context) {
+        val lifecycle = (context as? LifecycleOwner)?.lifecycle
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                audioManager.refreshAospSpatializerState()
+            }
+        }
+        lifecycle?.addObserver(observer)
+        onDispose { lifecycle?.removeObserver(observer) }
+    }
 
     val bassEnhancerEnabled by audioManager.bassEnhancerEnabledState.collectAsState()
     val bassEnhancerLevel by audioManager.bassEnhancerLevelState.collectAsState()
+    val midEnhancerEnabled by audioManager.midEnhancerEnabledState.collectAsState()
+    val midEnhancerLevel by audioManager.midEnhancerLevelState.collectAsState()
+    val trebleEnhancerEnabled by audioManager.trebleEnhancerEnabledState.collectAsState()
+    val trebleEnhancerLevel by audioManager.trebleEnhancerLevelState.collectAsState()
     val dialogueEnhancerEnabled by audioManager.dialogueEnhancerEnabledState.collectAsState()
     val dialogueEnhancerLevel by audioManager.dialogueEnhancerLevelState.collectAsState()
     val volumeLevelerEnabled by audioManager.volumeLevelerEnabledState.collectAsState()
@@ -518,21 +570,31 @@ fun EffectsTab(
         initialPage = initialPageIndex,
         pageCount = { DOLBY_PRESET_BANNERS.size }
     )
+    var isProgrammaticScroll by remember { mutableStateOf(false) }
 
-    // Sync pager settling to audio profile
-    LaunchedEffect(pagerState.settledPage) {
-        val settledProfile = DOLBY_PRESET_BANNERS[pagerState.settledPage].profile
-        if (dolbyProfile != settledProfile) {
-            dolbyProfile = settledProfile
-            audioManager.setDolbyProfile(settledProfile)
-        }
+    // Sync only user-driven swipes back to the audio profile (never snap on intermediate programmatic scroll frames)
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.settledPage to pagerState.isScrollInProgress }
+            .collect { (settled, scrolling) ->
+                if (!scrolling && !isProgrammaticScroll) {
+                    val settledProfile = DOLBY_PRESET_BANNERS[settled].profile
+                    if (dolbyProfile != settledProfile) {
+                        audioManager.setDolbyProfile(settledProfile)
+                    }
+                }
+            }
     }
 
-    // Sync external or radio button selection to pager position
+    // Single authoritative animator for external / button preset selections
     LaunchedEffect(dolbyProfile) {
         val targetIdx = DOLBY_PRESET_BANNERS.indexOfFirst { it.profile == dolbyProfile }
         if (targetIdx >= 0 && pagerState.currentPage != targetIdx) {
-            pagerState.animateScrollToPage(targetIdx)
+            isProgrammaticScroll = true
+            try {
+                pagerState.animateScrollToPage(targetIdx)
+            } finally {
+                isProgrammaticScroll = false
+            }
         }
     }
 
@@ -641,6 +703,117 @@ fun EffectsTab(
                             fontSize = 12.sp,
                             color = Color.White.copy(alpha = 0.85f),
                             maxLines = 2
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // Android Spatial Audio Status & Settings Shortcut Card
+        Card(
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            val statusColor = if (aospSpatializerActive) Color(0xFFFF9800) else Color(0xFF00C853)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        if (aospSpatializerActive) Color(0xFFFF9800).copy(alpha = 0.08f) else Color.Transparent
+                    )
+                    .padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(CircleShape)
+                        .background(statusColor.copy(alpha = 0.16f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (aospSpatializerActive) {
+                        Text(
+                            text = "!",
+                            fontSize = 19.sp,
+                            fontWeight = FontWeight.Black,
+                            color = statusColor
+                        )
+                    } else {
+                        Icon(
+                            imageVector = MiuixIcons.Ok,
+                            contentDescription = null,
+                            tint = statusColor,
+                            modifier = Modifier.size(19.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.spatial_aosp_warning_title),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MiuixTheme.colorScheme.onSurface
+                        )
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(statusColor.copy(alpha = 0.15f))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = if (aospSpatializerActive) "ENABLED" else "OFF",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (aospSpatializerActive) Color(0xFFE65100) else statusColor
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(3.dp))
+                    Text(
+                        text = stringResource(
+                            if (aospSpatializerActive) R.string.spatial_aosp_warning_active
+                            else R.string.spatial_aosp_warning_idle
+                        ),
+                        fontSize = 12.sp,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (aospSpatializerActive) Color(0xFFFF9800) else MiuixTheme.colorScheme.primary)
+                            .clickable {
+                                val spatialDirect = Intent().apply {
+                                    component = ComponentName(
+                                        "com.android.settings",
+                                        "com.android.settings.SubSettings"
+                                    )
+                                    putExtra(
+                                        ":settings:show_fragment",
+                                        "com.android.settings.notification.SpatialAudioSettings"
+                                    )
+                                }
+                                val soundHighlighted = Intent(AndroidSettings.ACTION_SOUND_SETTINGS).apply {
+                                    putExtra(":settings:fragment_args_key", "spatial_audio_summary")
+                                }
+                                runCatching { context.startActivity(spatialDirect) }
+                                    .onFailure {
+                                        runCatching { context.startActivity(soundHighlighted) }
+                                    }
+                            }
+                            .padding(horizontal = 12.dp, vertical = 7.dp)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.spatial_aosp_settings_button),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (aospSpatializerActive) Color.White else MiuixTheme.colorScheme.onPrimary
                         )
                     }
                 }
@@ -850,10 +1023,6 @@ fun EffectsTab(
                                 shape = RoundedCornerShape(22.dp)
                             )
                             .clickable {
-                                coroutineScope.launch {
-                                    pagerState.animateScrollToPage(page)
-                                }
-                                dolbyProfile = banner.profile
                                 audioManager.setDolbyProfile(banner.profile)
                             }
                     ) {
@@ -963,10 +1132,6 @@ fun EffectsTab(
                                             .clip(RoundedCornerShape(14.dp))
                                             .background(pillBg)
                                             .clickable {
-                                                coroutineScope.launch {
-                                                    pagerState.animateScrollToPage(globalIdx)
-                                                }
-                                                dolbyProfile = banner.profile
                                                 audioManager.setDolbyProfile(banner.profile)
                                             }
                                             .padding(horizontal = 10.dp, vertical = 10.dp),
@@ -1078,12 +1243,85 @@ fun EffectsTab(
                         onLevelChange = { audioManager.setBassEnhancerLevel(it) }
                     )
                 }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Separate Tonal Enhancers Section: Mid Enhancer + Treble Enhancer
+                val activeTonalCount = listOf(midEnhancerEnabled, trebleEnhancerEnabled).count { it }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 12.dp, end = 8.dp, top = 4.dp, bottom = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = stringResource(R.string.category_tonal_enhancers),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary
+                    )
+
+                    AnimatedVisibility(visible = activeTonalCount > 0) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(MiuixTheme.colorScheme.primary.copy(alpha = 0.14f))
+                                .padding(horizontal = 8.dp, vertical = 3.dp)
+                        ) {
+                            Text(
+                                text = "$activeTonalCount Active",
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MiuixTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                }
+
+                Card(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    EnhancerControlTile(
+                        title = stringResource(R.string.mid_enhancer),
+                        summary = stringResource(R.string.mid_enhancer_summary),
+                        intensityLabel = "Midrange Clarity",
+                        iconRes = R.drawable.ic_preset_voice,
+                        enabled = midEnhancerEnabled,
+                        level = midEnhancerLevel,
+                        preciseSliders = preciseSliders,
+                        onToggle = { audioManager.setMidEnhancerEnabled(it) },
+                        onLevelChange = { audioManager.setMidEnhancerLevel(it) }
+                    )
+
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+
+                    EnhancerControlTile(
+                        title = stringResource(R.string.treble_enhancer),
+                        summary = stringResource(R.string.treble_enhancer_summary),
+                        intensityLabel = "High-Frequency Air",
+                        iconRes = R.drawable.ic_preset_dynamic,
+                        enabled = trebleEnhancerEnabled,
+                        level = trebleEnhancerLevel,
+                        preciseSliders = preciseSliders,
+                        onToggle = { audioManager.setTrebleEnhancerEnabled(it) },
+                        onLevelChange = { audioManager.setTrebleEnhancerLevel(it) }
+                    )
+                }
             }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Section 3: Spatial & Surround Sound Options
+        // Section 3: Spatial & Surround Sound Options (Dolby Atmos only — disabled in Xiaomi Sound & Direct DAC)
+        val isSpatialSupported = effectMode == EffectMode.DOLBY
+        val spatialSummaryRes = when (effectMode) {
+            EffectMode.DOLBY -> R.string.immersive_sound_summary
+            EffectMode.MISOUND -> R.string.immersive_sound_misound_summary
+            EffectMode.OFF -> R.string.immersive_sound_off_summary
+        }
+
         Text(
             text = stringResource(R.string.category_spatial),
             fontSize = 14.sp,
@@ -1093,19 +1331,21 @@ fun EffectsTab(
         )
 
         Card(
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .graphicsLayer { alpha = if (isSpatialSupported) 1f else 0.44f }
         ) {
             EnhancerControlTile(
                 title = stringResource(R.string.immersive_sound),
-                summary = stringResource(R.string.immersive_sound_summary),
+                summary = stringResource(spatialSummaryRes),
                 intensityLabel = stringResource(R.string.virtualizer_intensity),
                 iconRes = R.drawable.ic_xiaomi_sound,
-                enabled = spatialEnabled,
+                enabled = isSpatialSupported && spatialEnabled,
                 level = surroundStrength.roundToInt(),
                 preciseSliders = preciseSliders,
+                interactive = isSpatialSupported,
                 onToggle = { checked -> audioManager.setSpatialAudioEnabled(checked) },
                 onLevelChange = { newLevel ->
-                    surroundStrength = newLevel.toFloat()
                     audioManager.setSurroundStrength(newLevel * 10)
                 }
             )
@@ -1117,7 +1357,143 @@ fun EffectsTab(
 }
 
 @Composable
-private fun EnhancerControlTile(
+internal fun TactilePercentSlider(
+    label: String,
+    level: Int,
+    preciseSliders: Boolean,
+    onLevelChange: (Int) -> Unit,
+    valueRange: IntRange = 0..100,
+    stepChips: List<Int> = listOf(25, 50, 75, 100),
+    chipSuffix: String = "%"
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = label,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary
+            )
+            if (stepChips.isNotEmpty()) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    val tolerance = if (valueRange.last <= 20) 0 else 4
+                    stepChips.forEach { step ->
+                        val isStepSelected = kotlin.math.abs(level - step) <= tolerance
+                        val chipBg by animateColorAsState(
+                            targetValue = if (isStepSelected) {
+                                MiuixTheme.colorScheme.primary
+                            } else {
+                                MiuixTheme.colorScheme.surfaceContainerHigh
+                            },
+                            animationSpec = tween(160),
+                            label = "StepBg_${label}_$step"
+                        )
+                        val chipFg by animateColorAsState(
+                            targetValue = if (isStepSelected) {
+                                MiuixTheme.colorScheme.onPrimary
+                            } else {
+                                MiuixTheme.colorScheme.onSurfaceVariantSummary
+                            },
+                            animationSpec = tween(160),
+                            label = "StepFg_${label}_$step"
+                        )
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(chipBg)
+                                .clickable { onLevelChange(step) }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = if (chipSuffix == " dB") "+$step$chipSuffix" else "$step$chipSuffix",
+                                fontSize = 10.5.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = chipFg
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        val view = LocalView.current
+        val detentTargets = remember(valueRange) {
+            if (valueRange == 0..100) setOf(25, 50, 75) else emptySet()
+        }
+        val currentLevel by rememberUpdatedState(level)
+        val keyPointsList = remember(preciseSliders, valueRange) {
+            if (!preciseSliders && valueRange == 0..100) listOf(25f, 50f, 75f) else null
+        }
+
+        // Allow direct point tapping along the track without interfering with Slider drags or toggling the parent card
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .pointerInput(preciseSliders, valueRange) {
+                    detectTapGestures { offset ->
+                        val w = size.width.toFloat()
+                        val capPad = 14.dp.toPx()
+                        val usable = (w - 2f * capPad).coerceAtLeast(1f)
+                        val fraction = ((offset.x - capPad) / usable).coerceIn(0f, 1f)
+                        val rawVal = valueRange.first + fraction * (valueRange.last - valueRange.first)
+                        var target = rawVal.roundToInt().coerceIn(valueRange.first, valueRange.last)
+                        if (!preciseSliders && valueRange == 0..100) {
+                            val nearestDetent = detentTargets.minByOrNull { kotlin.math.abs(it - target) }
+                            if (nearestDetent != null && kotlin.math.abs(nearestDetent - target) <= 3) {
+                                target = nearestDetent
+                            }
+                        }
+                        if (target != currentLevel) {
+                            if (!preciseSliders && target in detentTargets) {
+                                val hapticConst = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                                    HapticFeedbackConstants.SEGMENT_TICK
+                                } else {
+                                    HapticFeedbackConstants.CLOCK_TICK
+                                }
+                                view.performHapticFeedback(hapticConst)
+                            }
+                            onLevelChange(target)
+                        }
+                    }
+                }
+        ) {
+            Slider(
+                value = level.toFloat(),
+                onValueChange = { rawValue ->
+                    val nextLevel = rawValue.roundToInt().coerceIn(valueRange.first, valueRange.last)
+                    if (!preciseSliders && nextLevel != currentLevel && nextLevel in detentTargets) {
+                        val hapticConst = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                            HapticFeedbackConstants.SEGMENT_TICK
+                        } else {
+                            HapticFeedbackConstants.CLOCK_TICK
+                        }
+                        view.performHapticFeedback(hapticConst)
+                    }
+                    onLevelChange(nextLevel)
+                },
+                valueRange = valueRange.first.toFloat()..valueRange.last.toFloat(),
+                showKeyPoints = keyPointsList != null,
+                keyPoints = keyPointsList,
+                hapticEffect = if (!preciseSliders) {
+                    SliderDefaults.SliderHapticEffect.Step
+                } else {
+                    SliderDefaults.SliderHapticEffect.None
+                },
+                magnetThreshold = if (!preciseSliders) 0.032f else 0f,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    }
+}
+
+@Composable
+internal fun EnhancerControlTile(
     title: String,
     summary: String,
     intensityLabel: String,
@@ -1125,6 +1501,10 @@ private fun EnhancerControlTile(
     enabled: Boolean,
     level: Int,
     preciseSliders: Boolean,
+    interactive: Boolean = true,
+    valueRange: IntRange = 0..100,
+    stepChips: List<Int> = listOf(25, 50, 75, 100),
+    chipSuffix: String = "%",
     onToggle: (Boolean) -> Unit,
     onLevelChange: (Int) -> Unit
 ) {
@@ -1148,13 +1528,14 @@ private fun EnhancerControlTile(
     )
 
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onToggle(!enabled) }
-            .padding(horizontal = 16.dp, vertical = 14.dp)
+        modifier = Modifier.fillMaxWidth()
     ) {
+        // Clickable strictly on header Row so tapping/adjusting the Slider never closes the feature
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(enabled = interactive) { onToggle(!enabled) }
+                .padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
@@ -1196,7 +1577,7 @@ private fun EnhancerControlTile(
                                 .padding(horizontal = 6.dp, vertical = 2.dp)
                         ) {
                             Text(
-                                text = "$level%",
+                                text = if (chipSuffix == " dB") "+$level$chipSuffix" else "$level$chipSuffix",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = MiuixTheme.colorScheme.primary
@@ -1218,7 +1599,8 @@ private fun EnhancerControlTile(
 
             Switch(
                 checked = enabled,
-                onCheckedChange = onToggle
+                onCheckedChange = onToggle,
+                enabled = interactive
             )
         }
 
@@ -1230,87 +1612,16 @@ private fun EnhancerControlTile(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 12.dp)
+                    .padding(start = 16.dp, end = 16.dp, bottom = 14.dp)
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = intensityLabel,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf(25, 50, 75, 100).forEach { step ->
-                            val isStepSelected = kotlin.math.abs(level - step) <= 4
-                            val chipBg by animateColorAsState(
-                                targetValue = if (isStepSelected) {
-                                    MiuixTheme.colorScheme.primary
-                                } else {
-                                    MiuixTheme.colorScheme.surfaceContainerHigh
-                                },
-                                animationSpec = tween(160),
-                                label = "StepBg_${title}_$step"
-                            )
-                            val chipFg by animateColorAsState(
-                                targetValue = if (isStepSelected) {
-                                    MiuixTheme.colorScheme.onPrimary
-                                } else {
-                                    MiuixTheme.colorScheme.onSurfaceVariantSummary
-                                },
-                                animationSpec = tween(160),
-                                label = "StepFg_${title}_$step"
-                            )
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(chipBg)
-                                    .clickable { onLevelChange(step) }
-                                    .padding(horizontal = 8.dp, vertical = 4.dp)
-                            ) {
-                                Text(
-                                    text = "$step%",
-                                    fontSize = 10.5.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = chipFg
-                                )
-                            }
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                val view = LocalView.current
-                val detentTargets = remember { setOf(25, 50, 75) }
-                val currentLevel by rememberUpdatedState(level)
-                Slider(
-                    value = level.toFloat(),
-                    onValueChange = { rawValue ->
-                        val nextLevel = rawValue.roundToInt()
-                        if (!preciseSliders && nextLevel != currentLevel && nextLevel in detentTargets) {
-                            val hapticConst = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                                HapticFeedbackConstants.SEGMENT_TICK
-                            } else {
-                                HapticFeedbackConstants.CLOCK_TICK
-                            }
-                            view.performHapticFeedback(hapticConst)
-                        }
-                        onLevelChange(nextLevel)
-                    },
-                    valueRange = 0f..100f,
-                    showKeyPoints = !preciseSliders,
-                    keyPoints = if (!preciseSliders) listOf(25f, 50f, 75f) else null,
-                    hapticEffect = if (!preciseSliders) {
-                        SliderDefaults.SliderHapticEffect.Step
-                    } else {
-                        SliderDefaults.SliderHapticEffect.None
-                    },
-                    magnetThreshold = if (!preciseSliders) 0.032f else 0f,
-                    modifier = Modifier.fillMaxWidth()
+                TactilePercentSlider(
+                    label = intensityLabel,
+                    level = level,
+                    preciseSliders = preciseSliders,
+                    onLevelChange = onLevelChange,
+                    valueRange = valueRange,
+                    stepChips = stepChips,
+                    chipSuffix = chipSuffix
                 )
             }
         }

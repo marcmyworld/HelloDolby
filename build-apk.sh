@@ -12,11 +12,14 @@ cd "$DIR"
 BUILD_TOOLS_DIR="$DIR/.build_tools"
 mkdir -p "$BUILD_TOOLS_DIR"
 
-echo "=== Building HelloDolby with Gradle ==="
-./gradlew assembleDebug
+echo "=== Building Release HelloDolby with Gradle ==="
+./gradlew assembleRelease
 
-RAW_APK="$DIR/app/build/outputs/apk/debug/app-debug.apk"
-ALIGNED_APK="$DIR/app/build/outputs/apk/debug/app-aligned.apk"
+RAW_APK="$DIR/app/build/outputs/apk/release/app-release-unsigned.apk"
+if [ ! -f "$RAW_APK" ]; then
+    RAW_APK="$DIR/app/build/outputs/apk/release/app-release.apk"
+fi
+ALIGNED_APK="$DIR/app/build/outputs/apk/release/app-aligned.apk"
 FINAL_APK="$DIR/prebuilt/HelloDolby.apk"
 
 mkdir -p "$DIR/prebuilt"
@@ -44,11 +47,15 @@ find_sdk_tool() {
 ZIPALIGN=$(find_sdk_tool zipalign || true)
 APKSIGNER=$(find_sdk_tool apksigner || true)
 
-# Locate or download standard AOSP platform keys
+# Locate Evolution-X private platform keys first, then standard AOSP keys
 KEY_DIR="$BUILD_TOOLS_DIR/keys"
-if [ -n "${ANDROID_BUILD_TOP:-}" ] && [ -f "$ANDROID_BUILD_TOP/build/make/target/product/security/platform.pk8" ]; then
-    PLATFORM_KEY="$ANDROID_BUILD_TOP/build/make/target/product/security/platform.pk8"
-    PLATFORM_CERT="$ANDROID_BUILD_TOP/build/make/target/product/security/platform.x509.pem"
+TOP_DIR="${ANDROID_BUILD_TOP:-$(cd "$DIR/../.." && pwd)}"
+if [ -f "$TOP_DIR/vendor/evolution-priv/keys/platform.pk8" ] && [ -f "$TOP_DIR/vendor/evolution-priv/keys/platform.x509.pem" ]; then
+    PLATFORM_KEY="$TOP_DIR/vendor/evolution-priv/keys/platform.pk8"
+    PLATFORM_CERT="$TOP_DIR/vendor/evolution-priv/keys/platform.x509.pem"
+elif [ -f "$TOP_DIR/build/make/target/product/security/platform.pk8" ] && [ -f "$TOP_DIR/build/make/target/product/security/platform.x509.pem" ]; then
+    PLATFORM_KEY="$TOP_DIR/build/make/target/product/security/platform.pk8"
+    PLATFORM_CERT="$TOP_DIR/build/make/target/product/security/platform.x509.pem"
 elif [ -f "$KEY_DIR/platform.pk8" ] && [ -f "$KEY_DIR/platform.x509.pem" ]; then
     PLATFORM_KEY="$KEY_DIR/platform.pk8"
     PLATFORM_CERT="$KEY_DIR/platform.x509.pem"

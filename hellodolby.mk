@@ -7,5 +7,4 @@ PRODUCT_SOONG_NAMESPACES += \
     hardware/hellodolby
 
 PRODUCT_PACKAGES += \
-    HelloDolby \
-    privapp-permissions-hellodolby.xml
+    HelloDolby
