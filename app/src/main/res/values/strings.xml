@@ -37,9 +37,9 @@
     <string name="category_autoeq">Auto Equalizer (Online Profiles)</string>
     <string name="category_reset">Reset</string>
     <string name="reset_equalizer_title">Reset Equalizer</string>
-    <string name="reset_equalizer_summary">Restore all 10 frequency bands to neutral 0.0 dB</string>
-    <string name="reset_dolby_title">Reset Dolby Audio Engine</string>
-    <string name="reset_dolby_summary">Restore factory profile calibration, purge stale DSP data, and reactivate Bass Enhancer</string>
+    <string name="reset_equalizer_summary">Restore all frequency bands to neutral (0.0 dB)</string>
+    <string name="reset_dolby_title">Reset Dolby Audio</string>
+    <string name="reset_dolby_summary">Restore factory profile calibration, and purge stale DSP data</string>
     <string name="manage_presets">Manage</string>
     <string name="save_preset">Save Current</string>
     <string name="save_preset_title">Save Custom Preset</string>
