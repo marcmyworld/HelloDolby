@@ -38,9 +38,11 @@ import com.puppyfrommars.hellodolby.R
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.Switch
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.ChevronForward
 import top.yukonga.miuix.kmp.icon.extended.Ok
+import top.yukonga.miuix.kmp.icon.extended.Tune
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 
@@ -51,6 +53,8 @@ fun ContributorsScreen(
     onAccentChange: (AppAccentColor) -> Unit,
     paletteStyle: AppPaletteStyle,
     onPaletteStyleChange: (AppPaletteStyle) -> Unit,
+    preciseSliders: Boolean,
+    onPreciseSlidersChange: (Boolean) -> Unit,
     onOpenDebugInfo: () -> Unit
 ) {
     val context = LocalContext.current
@@ -356,6 +360,31 @@ fun ContributorsScreen(
             Spacer(modifier = Modifier.height(16.dp))
         }
 
+        // Interface & Controls Preferences
+        item {
+            Text(
+                text = stringResource(R.string.category_interface),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                modifier = Modifier.padding(start = 12.dp, top = 8.dp, bottom = 8.dp)
+            )
+
+            Card(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                AboutToggleRow(
+                    icon = MiuixIcons.Tune,
+                    title = stringResource(R.string.precise_sliders_title),
+                    summary = stringResource(R.string.precise_sliders_summary),
+                    checked = preciseSliders,
+                    onCheckedChange = onPreciseSlidersChange
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+
         // Diagnostics Card (icon-badged tile matching Audio Engine styling)
         item {
             Text(
@@ -424,5 +453,82 @@ fun ContributorsScreen(
             // Extra clearance for floating bottom bar
             Spacer(modifier = Modifier.height(100.dp))
         }
+    }
+}
+
+@Composable
+private fun AboutToggleRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    summary: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    val iconCircleBg by animateColorAsState(
+        targetValue = if (checked) {
+            MiuixTheme.colorScheme.primary.copy(alpha = 0.16f)
+        } else {
+            MiuixTheme.colorScheme.surfaceContainerHigh
+        },
+        animationSpec = tween(220),
+        label = "AboutToggleBg_$title"
+    )
+    val iconTint by animateColorAsState(
+        targetValue = if (checked) {
+            MiuixTheme.colorScheme.primary
+        } else {
+            MiuixTheme.colorScheme.onSurfaceVariantSummary
+        },
+        animationSpec = tween(220),
+        label = "AboutToggleTint_$title"
+    )
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onCheckedChange(!checked) }
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(38.dp)
+                .clip(CircleShape)
+                .background(iconCircleBg),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = title,
+                tint = iconTint,
+                modifier = Modifier.size(19.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.width(14.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                fontSize = 15.5.sp,
+                fontWeight = FontWeight.Medium,
+                color = MiuixTheme.colorScheme.onSurface
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = summary,
+                fontSize = 12.sp,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange
+        )
     }
 }

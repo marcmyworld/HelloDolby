@@ -50,6 +50,9 @@ class MainActivity : ComponentActivity() {
                     AppPaletteStyle.fromId(prefs.getString("palette_style", AppPaletteStyle.AUTO.id))
                 )
             }
+            var preciseSliders by remember {
+                mutableStateOf(prefs.getBoolean("precise_sliders", false))
+            }
 
             val systemInDark = isSystemInDarkTheme()
             val isDark = when (themeMode) {
@@ -91,6 +94,7 @@ class MainActivity : ComponentActivity() {
             MiuixTheme(controller = themeController) {
                 MainScreen(
                     audioManager = audioManager,
+                    isDark = isDark,
                     themeMode = themeMode,
                     onThemeChange = { newMode ->
                         themeMode = newMode
@@ -105,6 +109,11 @@ class MainActivity : ComponentActivity() {
                     onPaletteStyleChange = { newStyle ->
                         paletteStyle = newStyle
                         prefs.edit().putString("palette_style", newStyle.id).apply()
+                    },
+                    preciseSliders = preciseSliders,
+                    onPreciseSlidersChange = { enabled ->
+                        preciseSliders = enabled
+                        prefs.edit().putBoolean("precise_sliders", enabled).apply()
                     }
                 )
             }

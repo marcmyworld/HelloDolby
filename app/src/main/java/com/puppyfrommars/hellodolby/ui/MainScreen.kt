@@ -5,6 +5,11 @@
 
 package com.puppyfrommars.hellodolby.ui
 
+import android.graphics.RenderEffect as AndroidRenderEffect
+import android.graphics.RuntimeShader
+import android.graphics.Shader
+import android.os.Build
+import android.view.HapticFeedbackConstants
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -38,11 +43,22 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asComposeRenderEffect
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.layer.GraphicsLayer
+import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -56,14 +72,16 @@ import com.puppyfrommars.hellodolby.audio.DolbyProfile
 import com.puppyfrommars.hellodolby.audio.EffectMode
 import kotlinx.coroutines.launch
 import kotlin.math.absoluteValue
+import kotlin.math.roundToInt
 import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.FloatingNavigationBar
+import top.yukonga.miuix.kmp.basic.FloatingNavigationBarDefaults
 import top.yukonga.miuix.kmp.basic.FloatingNavigationBarItem
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Slider
+import top.yukonga.miuix.kmp.basic.SliderDefaults
 import top.yukonga.miuix.kmp.basic.Switch
 import top.yukonga.miuix.kmp.basic.ToolbarPosition
 import top.yukonga.miuix.kmp.basic.TopAppBar
@@ -137,18 +155,23 @@ enum class ScreenTab {
 @Composable
 fun MainScreen(
     audioManager: AudioEffectManager,
+    isDark: Boolean,
     themeMode: AppThemeMode,
     onThemeChange: (AppThemeMode) -> Unit,
     accentColor: AppAccentColor,
     onAccentChange: (AppAccentColor) -> Unit,
     paletteStyle: AppPaletteStyle,
-    onPaletteStyleChange: (AppPaletteStyle) -> Unit
+    onPaletteStyleChange: (AppPaletteStyle) -> Unit,
+    preciseSliders: Boolean,
+    onPreciseSlidersChange: (Boolean) -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
     val tabPagerState = rememberPagerState(initialPage = 0, pageCount = { ScreenTab.entries.size })
     val currentTab = ScreenTab.entries[tabPagerState.currentPage]
     var showDebugInfo by rememberSaveable { mutableStateOf(false) }
     var rotationTarget by rememberSaveable { mutableFloatStateOf(0f) }
+    val backdropLayer = rememberGraphicsLayer()
+    var pagerBoundsInRoot by remember { mutableStateOf(Rect.Zero) }
 
     BackHandler(enabled = showDebugInfo) {
         showDebugInfo = false
@@ -236,44 +259,17 @@ fun MainScreen(
         },
         floatingToolbar = {
             if (!isOnDebugPage) {
-                FloatingNavigationBar(
-                    color = MiuixTheme.colorScheme.surfaceContainer.copy(alpha = 0.82f),
-                    shadowElevation = 12.dp,
-                    cornerRadius = 32.dp,
-                    horizontalOutSidePadding = 24.dp,
-                    showDivider = false
-                ) {
-                    FloatingNavigationBarItem(
-                        selected = currentTab == ScreenTab.EFFECTS,
-                        onClick = {
-                            coroutineScope.launch {
-                                tabPagerState.animateScrollToPage(ScreenTab.EFFECTS.ordinal)
-                            }
-                        },
-                        icon = MiuixIcons.Music,
-                        label = stringResource(R.string.tab_audio_engine)
-                    )
-                    FloatingNavigationBarItem(
-                        selected = currentTab == ScreenTab.EQUALIZER,
-                        onClick = {
-                            coroutineScope.launch {
-                                tabPagerState.animateScrollToPage(ScreenTab.EQUALIZER.ordinal)
-                            }
-                        },
-                        icon = MiuixIcons.Tune,
-                        label = stringResource(R.string.tab_fine_tune)
-                    )
-                    FloatingNavigationBarItem(
-                        selected = currentTab == ScreenTab.CONTRIBUTORS,
-                        onClick = {
-                            coroutineScope.launch {
-                                tabPagerState.animateScrollToPage(ScreenTab.CONTRIBUTORS.ordinal)
-                            }
-                        },
-                        icon = MiuixIcons.Info,
-                        label = stringResource(R.string.tab_about)
-                    )
-                }
+                FrostedGlassFloatingNavBar(
+                    currentTab = currentTab,
+                    isDark = isDark,
+                    backdropLayer = backdropLayer,
+                    contentBoundsInRoot = pagerBoundsInRoot,
+                    onSelectTab = { targetTab ->
+                        coroutineScope.launch {
+                            tabPagerState.animateScrollToPage(targetTab.ordinal)
+                        }
+                    }
+                )
             }
         },
         floatingToolbarPosition = ToolbarPosition.BottomCenter
@@ -282,10 +278,24 @@ fun MainScreen(
             state = tabPagerState,
             userScrollEnabled = !isOnDebugPage,
             beyondViewportPageCount = 1,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier
+                .fillMaxSize()
+                .onGloballyPositioned { coords ->
+                    pagerBoundsInRoot = coords.boundsInRoot()
+                }
+                .drawWithContent {
+                    backdropLayer.record {
+                        this@drawWithContent.drawContent()
+                    }
+                    drawLayer(backdropLayer)
+                }
         ) { page ->
             when (ScreenTab.entries[page]) {
-                ScreenTab.EFFECTS -> EffectsTab(audioManager, padding)
+                ScreenTab.EFFECTS -> EffectsTab(
+                    audioManager = audioManager,
+                    padding = padding,
+                    preciseSliders = preciseSliders
+                )
                 ScreenTab.EQUALIZER -> EqualizerScreen(audioManager, padding)
                 ScreenTab.CONTRIBUTORS -> {
                     if (showDebugInfo) {
@@ -297,6 +307,8 @@ fun MainScreen(
                             onAccentChange = onAccentChange,
                             paletteStyle = paletteStyle,
                             onPaletteStyleChange = onPaletteStyleChange,
+                            preciseSliders = preciseSliders,
+                            onPreciseSlidersChange = onPreciseSlidersChange,
                             onOpenDebugInfo = { showDebugInfo = true }
                         )
                     }
@@ -306,8 +318,188 @@ fun MainScreen(
     }
 }
 
+private const val FROSTED_GLASS_LENS_AGSL = """
+uniform shader content;
+uniform float2 resolution;
+
+float sdCapsulePill(float2 p, float2 halfSize, float radius) {
+    float2 q = abs(p) - max(halfSize - float2(radius), float2(0.0));
+    return length(max(q, float2(0.0))) + min(max(q.x, q.y), 0.0) - radius;
+}
+
+half4 main(float2 fragCoord) {
+    float2 halfSize = max(resolution * 0.5, float2(1.0));
+    float radius = halfSize.y;
+    float2 p = fragCoord - halfSize;
+
+    float d = sdCapsulePill(p, halfSize, radius);
+    float rimBand = clamp((-d) / max(radius * 0.72, 1.0), 0.0, 1.0);
+    float rimCurve = pow(1.0 - rimBand, 2.2);
+
+    float eps = 1.0;
+    float2 grad = float2(
+        sdCapsulePill(p + float2(eps, 0.0), halfSize, radius) - sdCapsulePill(p - float2(eps, 0.0), halfSize, radius),
+        sdCapsulePill(p + float2(0.0, eps), halfSize, radius) - sdCapsulePill(p - float2(0.0, eps), halfSize, radius)
+    );
+    float2 normal = grad / max(length(grad), 0.0001);
+
+    // Optical refraction near curved pill meniscus + subtle center dome magnification
+    float2 sampleBase = fragCoord - p * (0.025 * (1.0 - rimCurve));
+    float bend = rimCurve * radius * 0.18;
+    float disp = rimCurve * radius * 0.035;
+
+    float2 maxCoord = max(resolution - float2(1.0), float2(1.0));
+    float2 uvR = clamp(sampleBase - normal * (bend + disp), float2(1.0), maxCoord);
+    float2 uvG = clamp(sampleBase - normal * bend, float2(1.0), maxCoord);
+    float2 uvB = clamp(sampleBase - normal * (bend - disp), float2(1.0), maxCoord);
+
+    half r = content.eval(uvR).r;
+    half g = content.eval(uvG).g;
+    half b = content.eval(uvB).b;
+    half a = content.eval(uvG).a;
+
+    float upperSheen = smoothstep(0.0, -radius * 0.35, p.y) * rimCurve * 0.06;
+    float lowerBounce = smoothstep(0.0, radius * 0.35, p.y) * pow(rimCurve, 1.8) * 0.03;
+    half3 rgb = half3(r, g, b) + half3(upperSheen + lowerBounce);
+    return half4(rgb, a);
+}
+"""
+
 @Composable
-fun EffectsTab(audioManager: AudioEffectManager, padding: PaddingValues) {
+private fun FrostedGlassFloatingNavBar(
+    currentTab: ScreenTab,
+    isDark: Boolean,
+    backdropLayer: GraphicsLayer,
+    contentBoundsInRoot: Rect,
+    onSelectTab: (ScreenTab) -> Unit
+) {
+    val navBottomInset = WindowInsets.navigationBars.only(WindowInsetsSides.Bottom).asPaddingValues().calculateBottomPadding()
+    val bottomMargin = if (navBottomInset > 0.dp) 26.dp + navBottomInset else 36.dp
+    val pillShape = RoundedCornerShape(32.dp)
+    var pillBoundsInRoot by remember { mutableStateOf(Rect.Zero) }
+    val lensShader = remember {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            RuntimeShader(FROSTED_GLASS_LENS_AGSL)
+        } else {
+            null
+        }
+    }
+
+    val surfaceTint = MiuixTheme.colorScheme.surfaceContainer
+    val tintColor = if (isDark) {
+        surfaceTint.copy(alpha = 0.34f)
+    } else {
+        Color.White.copy(alpha = 0.42f)
+    }
+    val rimBrush = if (isDark) {
+        Brush.verticalGradient(
+            listOf(
+                Color.White.copy(alpha = 0.36f),
+                Color.White.copy(alpha = 0.07f),
+                Color.White.copy(alpha = 0.16f)
+            )
+        )
+    } else {
+        Brush.verticalGradient(
+            listOf(
+                Color.White.copy(alpha = 0.88f),
+                Color.White.copy(alpha = 0.22f),
+                Color.White.copy(alpha = 0.50f)
+            )
+        )
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp)
+            .padding(bottom = bottomMargin),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .defaultMinSize(minHeight = 52.dp)
+                .onGloballyPositioned { coords ->
+                    pillBoundsInRoot = coords.boundsInRoot()
+                }
+        ) {
+            // Optical frosted blur + AGSL liquid lens refraction backdrop surface
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .graphicsLayer {
+                        clip = true
+                        shape = pillShape
+                        val blur = AndroidRenderEffect.createBlurEffect(22f, 22f, Shader.TileMode.CLAMP)
+                        renderEffect = if (
+                            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                            lensShader != null &&
+                            size.width > 1f &&
+                            size.height > 1f
+                        ) {
+                            lensShader.setFloatUniform("resolution", size.width, size.height)
+                            val lens = AndroidRenderEffect.createRuntimeShaderEffect(lensShader, "content")
+                            AndroidRenderEffect.createChainEffect(lens, blur).asComposeRenderEffect()
+                        } else {
+                            blur.asComposeRenderEffect()
+                        }
+                    }
+                    .drawBehind {
+                        if (pillBoundsInRoot != Rect.Zero && contentBoundsInRoot != Rect.Zero) {
+                            val dx = pillBoundsInRoot.left - contentBoundsInRoot.left
+                            val dy = pillBoundsInRoot.top - contentBoundsInRoot.top
+                            translate(-dx, -dy) {
+                                drawLayer(backdropLayer)
+                            }
+                        }
+                        drawRect(color = tintColor)
+                    }
+            )
+
+            // Crisp specular frosted glass rim border rendered above the blur pass
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .border(width = 0.9.dp, brush = rimBrush, shape = pillShape)
+            )
+
+            // Crisp un-blurred foreground navigation items
+            Row(
+                modifier = Modifier
+                    .defaultMinSize(minHeight = 52.dp)
+                    .padding(horizontal = FloatingNavigationBarDefaults.HorizontalPadding, vertical = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(FloatingNavigationBarDefaults.ItemSpacing),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                FloatingNavigationBarItem(
+                    selected = currentTab == ScreenTab.EFFECTS,
+                    onClick = { onSelectTab(ScreenTab.EFFECTS) },
+                    icon = MiuixIcons.Music,
+                    label = stringResource(R.string.tab_audio_engine)
+                )
+                FloatingNavigationBarItem(
+                    selected = currentTab == ScreenTab.EQUALIZER,
+                    onClick = { onSelectTab(ScreenTab.EQUALIZER) },
+                    icon = MiuixIcons.Tune,
+                    label = stringResource(R.string.tab_fine_tune)
+                )
+                FloatingNavigationBarItem(
+                    selected = currentTab == ScreenTab.CONTRIBUTORS,
+                    onClick = { onSelectTab(ScreenTab.CONTRIBUTORS) },
+                    icon = MiuixIcons.Info,
+                    label = stringResource(R.string.tab_about)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun EffectsTab(
+    audioManager: AudioEffectManager,
+    padding: PaddingValues,
+    preciseSliders: Boolean
+) {
     val coroutineScope = rememberCoroutineScope()
     val effectMode by audioManager.effectModeState.collectAsState()
     var dolbyProfile by remember { mutableStateOf(audioManager.getDolbyProfile()) }
@@ -849,10 +1041,11 @@ fun EffectsTab(audioManager: AudioEffectManager, padding: PaddingValues) {
                     EnhancerControlTile(
                         title = stringResource(R.string.dialogue_enhancer),
                         summary = stringResource(R.string.dialogue_enhancer_summary),
-                        intensityLabel = "Dialogue Intelligibility",
+                        intensityLabel = "Dialogue Clarity",
                         iconRes = R.drawable.ic_preset_voice,
                         enabled = dialogueEnhancerEnabled,
                         level = dialogueEnhancerLevel,
+                        preciseSliders = preciseSliders,
                         onToggle = { audioManager.setDialogueEnhancerEnabled(it) },
                         onLevelChange = { audioManager.setDialogueEnhancerLevel(it) }
                     )
@@ -862,10 +1055,11 @@ fun EffectsTab(audioManager: AudioEffectManager, padding: PaddingValues) {
                     EnhancerControlTile(
                         title = stringResource(R.string.volume_leveler),
                         summary = stringResource(R.string.volume_leveler_summary),
-                        intensityLabel = "Leveling Dynamic Range",
+                        intensityLabel = "Leveling Strength",
                         iconRes = R.drawable.ic_direct_dac,
                         enabled = volumeLevelerEnabled,
                         level = volumeLevelerLevel,
+                        preciseSliders = preciseSliders,
                         onToggle = { audioManager.setVolumeLevelerEnabled(it) },
                         onLevelChange = { audioManager.setVolumeLevelerLevel(it) }
                     )
@@ -875,10 +1069,11 @@ fun EffectsTab(audioManager: AudioEffectManager, padding: PaddingValues) {
                     EnhancerControlTile(
                         title = stringResource(R.string.bass_enhancer),
                         summary = stringResource(R.string.bass_enhancer_summary),
-                        intensityLabel = "Bass Boost Intensity",
+                        intensityLabel = "Sub-Bass Gain",
                         iconRes = R.drawable.ic_preset_music,
                         enabled = bassEnhancerEnabled,
                         level = bassEnhancerLevel,
+                        preciseSliders = preciseSliders,
                         onToggle = { audioManager.setBassEnhancerEnabled(it) },
                         onLevelChange = { audioManager.setBassEnhancerLevel(it) }
                     )
@@ -906,7 +1101,8 @@ fun EffectsTab(audioManager: AudioEffectManager, padding: PaddingValues) {
                 intensityLabel = stringResource(R.string.virtualizer_intensity),
                 iconRes = R.drawable.ic_xiaomi_sound,
                 enabled = spatialEnabled,
-                level = surroundStrength.toInt(),
+                level = surroundStrength.roundToInt(),
+                preciseSliders = preciseSliders,
                 onToggle = { checked -> audioManager.setSpatialAudioEnabled(checked) },
                 onLevelChange = { newLevel ->
                     surroundStrength = newLevel.toFloat()
@@ -928,6 +1124,7 @@ private fun EnhancerControlTile(
     iconRes: Int,
     enabled: Boolean,
     level: Int,
+    preciseSliders: Boolean,
     onToggle: (Boolean) -> Unit,
     onLevelChange: (Int) -> Unit
 ) {
@@ -1087,10 +1284,32 @@ private fun EnhancerControlTile(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
+                val view = LocalView.current
+                val detentTargets = remember { setOf(25, 50, 75) }
+                val currentLevel by rememberUpdatedState(level)
                 Slider(
                     value = level.toFloat(),
-                    onValueChange = { onLevelChange(it.toInt()) },
+                    onValueChange = { rawValue ->
+                        val nextLevel = rawValue.roundToInt()
+                        if (!preciseSliders && nextLevel != currentLevel && nextLevel in detentTargets) {
+                            val hapticConst = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                                HapticFeedbackConstants.SEGMENT_TICK
+                            } else {
+                                HapticFeedbackConstants.CLOCK_TICK
+                            }
+                            view.performHapticFeedback(hapticConst)
+                        }
+                        onLevelChange(nextLevel)
+                    },
                     valueRange = 0f..100f,
+                    showKeyPoints = !preciseSliders,
+                    keyPoints = if (!preciseSliders) listOf(25f, 50f, 75f) else null,
+                    hapticEffect = if (!preciseSliders) {
+                        SliderDefaults.SliderHapticEffect.Step
+                    } else {
+                        SliderDefaults.SliderHapticEffect.None
+                    },
+                    magnetThreshold = if (!preciseSliders) 0.032f else 0f,
                     modifier = Modifier.fillMaxWidth()
                 )
             }
