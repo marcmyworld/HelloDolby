@@ -3,12 +3,189 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 
-android_app_import {
+package {
+    default_applicable_licenses: ["Android-Apache-2.0"],
+}
+
+android_app {
     name: "HelloDolby",
-    apk: "prebuilt/HelloDolby.apk",
+    manifest: "AndroidManifest.xml",
+
+    srcs: ["src/**/*.kt"],
+    resource_dirs: ["res"],
+    asset_dirs: ["assets"],
+
     certificate: "platform",
-    dex_preopt: {
-        enabled: false,
-    },
+    platform_apis: true,
     system_ext_specific: true,
+    min_sdk_version: "31",
+
+    optimize: {
+        enabled: true,
+        shrink_resources: true,
+        proguard_flags_files: ["proguard.flags"],
+    },
+
+    static_libs: [
+        "kotlin-stdlib",
+        "kotlinx-coroutines-core",
+        "kotlinx-coroutines-android",
+        "androidx.core_core-ktx",
+        "androidx.activity_activity-compose",
+        "androidx.annotation_annotation",
+        "androidx.collection_collection",
+        "androidx.lifecycle_lifecycle-runtime-compose",
+        "androidx.lifecycle_lifecycle-runtime-ktx",
+        "androidx.lifecycle_lifecycle-viewmodel-compose",
+        "androidx.savedstate_savedstate-compose",
+        "androidx.window_window",
+        "androidx.compose.animation_animation",
+        "androidx.compose.animation_animation-core",
+        "androidx.compose.foundation_foundation",
+        "androidx.compose.foundation_foundation-layout",
+        "androidx.compose.material3_material3",
+        "androidx.compose.material3_material3-window-size-class",
+        "androidx.compose.material_material-icons-core",
+        "androidx.compose.material_material-ripple",
+        "androidx.compose.runtime_runtime",
+        "androidx.compose.runtime_runtime-saveable",
+        "androidx.compose.ui_ui",
+        "androidx.compose.ui_ui-geometry",
+        "androidx.compose.ui_ui-graphics",
+        "androidx.compose.ui_ui-text",
+        "androidx.compose.ui_ui-unit",
+        "androidx.compose.ui_ui-util",
+        "hellodolby_miuix-core",
+        "hellodolby_miuix-ui",
+        "hellodolby_miuix-preference",
+        "hellodolby_miuix-icons",
+        "hellodolby_miuix-squircle",
+        "hellodolby_miuix-shader",
+        "hellodolby_material-color-utilities",
+    ],
+
+    kotlincflags: [
+        "-Xjvm-default=all",
+        "-Xskip-metadata-version-check",
+        "-P plugin:androidx.compose.compiler.plugins.kotlin:sourceInformation=true",
+    ],
+}
+
+android_library_import {
+    name: "hellodolby_material-color-utilities",
+    aars: ["libs/material-color-utilities-android-5.0.1.aar"],
+    sdk_version: "current",
+    min_sdk_version: "31",
+}
+
+android_library_import {
+    name: "hellodolby_miuix-core",
+    aars: ["libs/miuix-core-android-0.9.4.aar"],
+    sdk_version: "current",
+    min_sdk_version: "31",
+    static_libs: [
+        "kotlin-stdlib",
+        "androidx.annotation_annotation",
+        "androidx.collection_collection",
+        "androidx.compose.animation_animation",
+        "androidx.compose.animation_animation-core",
+        "androidx.compose.foundation_foundation",
+        "androidx.compose.runtime_runtime",
+        "androidx.compose.ui_ui",
+        "androidx.core_core-ktx",
+    ],
+}
+
+android_library_import {
+    name: "hellodolby_miuix-shader",
+    aars: ["libs/miuix-shader-android-0.9.4.aar"],
+    sdk_version: "current",
+    min_sdk_version: "31",
+    static_libs: [
+        "kotlin-stdlib",
+        "androidx.annotation_annotation",
+        "androidx.compose.runtime_runtime",
+        "androidx.compose.ui_ui",
+    ],
+}
+
+android_library_import {
+    name: "hellodolby_miuix-squircle",
+    aars: ["libs/miuix-squircle-android-0.9.4.aar"],
+    sdk_version: "current",
+    min_sdk_version: "31",
+    static_libs: [
+        "kotlin-stdlib",
+        "androidx.annotation_annotation",
+        "androidx.compose.runtime_runtime",
+        "androidx.compose.ui_ui",
+        "androidx.compose.ui_ui-geometry",
+        "androidx.compose.ui_ui-graphics",
+        "androidx.compose.ui_ui-unit",
+    ],
+}
+
+android_library_import {
+    name: "hellodolby_miuix-ui",
+    aars: ["libs/miuix-ui-android-0.9.4.aar"],
+    sdk_version: "current",
+    min_sdk_version: "31",
+    static_libs: [
+        "hellodolby_miuix-core",
+        "hellodolby_miuix-squircle",
+        "hellodolby_miuix-shader",
+        "hellodolby_material-color-utilities",
+        "kotlin-stdlib",
+        "kotlinx-coroutines-core",
+        "kotlinx-coroutines-android",
+        "androidx.activity_activity-compose",
+        "androidx.annotation_annotation",
+        "androidx.collection_collection",
+        "androidx.compose.animation_animation",
+        "androidx.compose.animation_animation-core",
+        "androidx.compose.foundation_foundation",
+        "androidx.compose.foundation_foundation-layout",
+        "androidx.compose.material3_material3-window-size-class",
+        "androidx.compose.runtime_runtime",
+        "androidx.compose.runtime_runtime-saveable",
+        "androidx.compose.ui_ui",
+        "androidx.compose.ui_ui-geometry",
+        "androidx.compose.ui_ui-graphics",
+        "androidx.compose.ui_ui-text",
+        "androidx.compose.ui_ui-unit",
+        "androidx.compose.ui_ui-util",
+        "androidx.core_core-ktx",
+        "androidx.lifecycle_lifecycle-runtime-compose",
+        "androidx.window_window",
+    ],
+}
+
+android_library_import {
+    name: "hellodolby_miuix-preference",
+    aars: ["libs/miuix-preference-android-0.9.4.aar"],
+    sdk_version: "current",
+    min_sdk_version: "31",
+    static_libs: [
+        "hellodolby_miuix-core",
+        "hellodolby_miuix-ui",
+        "kotlin-stdlib",
+        "androidx.compose.animation_animation",
+        "androidx.compose.foundation_foundation",
+        "androidx.compose.runtime_runtime",
+        "androidx.compose.ui_ui",
+    ],
+}
+
+android_library_import {
+    name: "hellodolby_miuix-icons",
+    aars: ["libs/miuix-icons-android-0.9.4.aar"],
+    sdk_version: "current",
+    min_sdk_version: "31",
+    static_libs: [
+        "kotlin-stdlib",
+        "androidx.compose.runtime_runtime",
+        "androidx.compose.ui_ui",
+        "androidx.compose.ui_ui-graphics",
+        "androidx.compose.ui_ui-unit",
+    ],
 }

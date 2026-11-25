@@ -7,3 +7,5 @@
 -dontwarn android.media.Spatializer
 -dontwarn android.media.audiofx.AudioEffect
 -dontwarn java.lang.invoke.StringConcatFactory
+-dontwarn dev.drewhamilton.poko.**
+-dontwarn org.jetbrains.kotlin.**

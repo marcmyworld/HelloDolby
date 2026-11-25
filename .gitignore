@@ -1,11 +1,2 @@
-*.iml
-.gradle
-/local.properties
-/.idea
+*.swp
 .DS_Store
-/build
-app/build
-.kotlin
-*.idsig
-.build_tools/
-.build-cache/
