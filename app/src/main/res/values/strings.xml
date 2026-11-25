@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Dolby Atmos</string>
+    <string name="app_name">Hello Dolby</string>
     <string name="dolby_atmos">Dolby Atmos</string>
     <string name="dolby_summary">Cinematic 3D soundstage with intelligent clarity and depth</string>
     <string name="xiaomi_sound">Xiaomi Sound</string>
