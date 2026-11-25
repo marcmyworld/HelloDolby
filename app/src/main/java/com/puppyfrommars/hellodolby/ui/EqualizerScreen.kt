@@ -49,6 +49,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -59,13 +60,15 @@ import com.puppyfrommars.hellodolby.data.autoeq.AutoEqIndexEntry
 import com.puppyfrommars.hellodolby.data.autoeq.AutoEqRepository
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
+import top.yukonga.miuix.kmp.basic.Switch
 import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.extended.ChevronForward
+import top.yukonga.miuix.kmp.icon.extended.Delete
 import top.yukonga.miuix.kmp.icon.extended.Ok
-import top.yukonga.miuix.kmp.preference.ArrowPreference
-import top.yukonga.miuix.kmp.preference.SliderPreference
-import top.yukonga.miuix.kmp.preference.SwitchPreference
+import top.yukonga.miuix.kmp.icon.extended.Refresh
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 private val BAND_LABELS = listOf(
@@ -85,15 +88,15 @@ data class PresetInfo(
 )
 
 private val PRESET_CARDS = listOf(
-    PresetInfo("Flat", "Studio reference balance", R.drawable.preset_bg_flat),
-    PresetInfo("Rock", "Punchy kick, boosted highs", R.drawable.preset_bg_rock),
-    PresetInfo("Jazz", "Smooth brass & warm mids", R.drawable.preset_bg_jazz),
-    PresetInfo("Pop", "Vibrant vocals & synth beat", R.drawable.preset_bg_pop),
-    PresetInfo("Classical", "Spacious orchestral strings", R.drawable.preset_bg_classical),
-    PresetInfo("Hip Hop", "Deep sub-bass & crisp snare", R.drawable.preset_bg_hiphop),
-    PresetInfo("Electronic", "Tight EDM low end & drive", R.drawable.preset_bg_electronic),
-    PresetInfo("Vocal Boost", "Forward dialogue presence", R.drawable.preset_bg_vocal),
-    PresetInfo("Bass Boost", "Deep visceral sub-bass impact", R.drawable.preset_bg_bass)
+    PresetInfo("Flat", "Neutral reference response", R.drawable.preset_bg_flat),
+    PresetInfo("Rock", "Tight low end & bright presence", R.drawable.preset_bg_rock),
+    PresetInfo("Jazz", "Warm mids & brass articulation", R.drawable.preset_bg_jazz),
+    PresetInfo("Pop", "Forward vocals & crisp highs", R.drawable.preset_bg_pop),
+    PresetInfo("Classical", "Natural orchestral clarity", R.drawable.preset_bg_classical),
+    PresetInfo("Hip Hop", "Extended sub-bass & sharp snap", R.drawable.preset_bg_hiphop),
+    PresetInfo("Electronic", "Punchy sub-bass & clean highs", R.drawable.preset_bg_electronic),
+    PresetInfo("Vocal Boost", "Elevated midrange voice focus", R.drawable.preset_bg_vocal),
+    PresetInfo("Bass Boost", "Deep low-frequency warmth", R.drawable.preset_bg_bass)
 )
 
 enum class EqViewMode {
@@ -121,7 +124,7 @@ fun EqualizerScreen(
     val isDolbyActive = effectMode == EffectMode.DOLBY
     val isInteractive = equalizerEnabled && isDolbyActive
 
-    var viewMode by remember { mutableStateOf(EqViewMode.SLIDERS) }
+    var viewMode by remember { mutableStateOf(EqViewMode.LIVE_GRAPH) }
     var viewModeRotationTarget by rememberSaveable { mutableFloatStateOf(0f) }
     val viewModeRotation by animateFloatAsState(
         targetValue = viewModeRotationTarget,
@@ -145,41 +148,71 @@ fun EqualizerScreen(
             .verticalScroll(scrollState)
             .padding(horizontal = 16.dp, vertical = 8.dp)
     ) {
-        // Connected Device Badge Card (Multi-Device State Memory)
+        // Connected Device Badge Card (icon badge + active state pill)
         Card(
             modifier = Modifier.fillMaxWidth()
         ) {
+            val isSpeaker = connectedDevice.contains("Speaker", ignoreCase = true)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Box(
                     modifier = Modifier
-                        .size(36.dp)
+                        .size(40.dp)
                         .clip(CircleShape)
-                        .background(MiuixTheme.colorScheme.primary.copy(alpha = 0.15f)),
+                        .background(MiuixTheme.colorScheme.primary.copy(alpha = 0.14f)),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = if (connectedDevice.contains("Speaker", ignoreCase = true)) "🔊" else "🎧",
-                        fontSize = 18.sp
+                    Icon(
+                        painter = painterResource(
+                            if (isSpeaker) R.drawable.ic_speaker else R.drawable.ic_xiaomi_sound
+                        ),
+                        contentDescription = connectedDevice,
+                        tint = MiuixTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
                     )
                 }
                 Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = connectedDevice,
-                        fontSize = 15.sp,
+                        fontSize = 15.5.sp,
                         fontWeight = FontWeight.Bold,
                         color = MiuixTheme.colorScheme.onSurface
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = "Device-specific profile memory active",
+                        text = "Current output route",
                         fontSize = 12.sp,
                         color = MiuixTheme.colorScheme.onSurfaceVariantSummary
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(
+                            if (isInteractive) {
+                                MiuixTheme.colorScheme.primary.copy(alpha = 0.14f)
+                            } else {
+                                MiuixTheme.colorScheme.surfaceContainerHigh
+                            }
+                        )
+                        .padding(horizontal = 9.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = if (isInteractive) activePreset else "Bypassed",
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (isInteractive) {
+                            MiuixTheme.colorScheme.primary
+                        } else {
+                            MiuixTheme.colorScheme.onSurfaceVariantSummary
+                        },
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
@@ -199,17 +232,101 @@ fun EqualizerScreen(
         Card(
             modifier = Modifier.fillMaxWidth()
         ) {
-            SwitchPreference(
-                title = stringResource(R.string.equalizer_enable),
-                summary = stringResource(R.string.equalizer_enable_summary),
-                checked = equalizerEnabled && isDolbyActive,
-                onCheckedChange = { audioManager.setEqualizerEnabled(it) },
-                enabled = isDolbyActive
+            val eqOn = equalizerEnabled && isDolbyActive
+            val eqIconBg by animateColorAsState(
+                targetValue = if (eqOn) {
+                    MiuixTheme.colorScheme.primary.copy(alpha = 0.16f)
+                } else {
+                    MiuixTheme.colorScheme.surfaceContainerHigh
+                },
+                animationSpec = tween(220),
+                label = "EqMasterIconBg"
             )
+            val eqIconTint by animateColorAsState(
+                targetValue = if (eqOn) {
+                    MiuixTheme.colorScheme.primary
+                } else {
+                    MiuixTheme.colorScheme.onSurfaceVariantSummary
+                },
+                animationSpec = tween(220),
+                label = "EqMasterIconTint"
+            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(enabled = isDolbyActive) { audioManager.setEqualizerEnabled(!equalizerEnabled) }
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(CircleShape)
+                        .background(eqIconBg),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_eq_sliders),
+                        contentDescription = stringResource(R.string.equalizer_enable),
+                        tint = eqIconTint,
+                        modifier = Modifier.size(19.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(14.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.equalizer_enable),
+                            fontSize = 15.5.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MiuixTheme.colorScheme.onSurface
+                        )
+                        if (eqOn) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(MiuixTheme.colorScheme.primary.copy(alpha = 0.14f))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = "ON",
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MiuixTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = stringResource(R.string.equalizer_enable_summary),
+                        fontSize = 12.sp,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                Switch(
+                    checked = eqOn,
+                    onCheckedChange = { if (isDolbyActive) audioManager.setEqualizerEnabled(it) },
+                    enabled = isDolbyActive
+                )
+            }
         }
 
         // Dolby Engine Dependency Warning Card
-        if (!isDolbyActive) {
+        AnimatedVisibility(
+            visible = !isDolbyActive,
+            enter = expandVertically(spring(stiffness = Spring.StiffnessMediumLow)) + fadeIn(tween(220)),
+            exit = shrinkVertically(spring(stiffness = Spring.StiffnessMediumLow)) + fadeOut(tween(160))
+        ) {
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -223,9 +340,9 @@ fun EqualizerScreen(
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(36.dp)
+                            .size(38.dp)
                             .clip(CircleShape)
-                            .background(Color(0xFFFF9800).copy(alpha = 0.2f)),
+                            .background(Color(0xFFFF9800).copy(alpha = 0.18f)),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
@@ -239,18 +356,18 @@ fun EqualizerScreen(
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = stringResource(R.string.equalizer_dolby_required_warning),
-                            fontSize = 13.sp,
+                            fontSize = 12.5.sp,
                             color = MiuixTheme.colorScheme.onSurface
                         )
-                        Spacer(modifier = Modifier.height(6.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
                         Box(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
+                                .clip(RoundedCornerShape(10.dp))
                                 .background(MiuixTheme.colorScheme.primary)
                                 .clickable {
                                     audioManager.setEffectMode(EffectMode.DOLBY)
                                 }
-                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                                .padding(horizontal = 12.dp, vertical = 7.dp)
                         ) {
                             Text(
                                 text = stringResource(R.string.switch_to_dolby),
@@ -492,7 +609,7 @@ fun EqualizerScreen(
 
             Spacer(modifier = Modifier.height(18.dp))
 
-            // Frequency Response Section with Single Animated Rotating Switcher Button
+            // Frequency Response Section with Compact Rotating Icon Switcher
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -507,7 +624,6 @@ fun EqualizerScreen(
                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary
                 )
 
-                // Single Animated Button with rotating/scaling changing icon
                 IconButton(
                     onClick = {
                         if (isInteractive) {
@@ -553,28 +669,34 @@ fun EqualizerScreen(
                         .fillMaxWidth()
                         .padding(14.dp)
                 ) {
-                    if (viewMode == EqViewMode.SLIDERS) {
-                        // 10 Vertical Sliders side-by-side: Bass (left) to Treble (right)
-                        VerticalEqualizerView(
-                            bandGains = bandGains,
-                            onGainChange = { index, newGain ->
-                                if (isInteractive) {
-                                    audioManager.setEqualizerBand(index, newGain)
-                                }
-                            },
-                            enabled = isInteractive
-                        )
-                    } else {
-                        // Live Frequency Response Curve (like hardware_dolby)
-                        InteractiveLiveEqGraph(
-                            bandGains = bandGains,
-                            onBandGainChange = { index, newGain ->
-                                if (isInteractive) {
-                                    audioManager.setEqualizerBand(index, newGain)
-                                }
-                            },
-                            enabled = isInteractive
-                        )
+                    AnimatedContent(
+                        targetState = viewMode,
+                        transitionSpec = {
+                            fadeIn(tween(200)).togetherWith(fadeOut(tween(150)))
+                        },
+                        label = "EqViewTransition"
+                    ) { mode ->
+                        if (mode == EqViewMode.SLIDERS) {
+                            VerticalEqualizerView(
+                                bandGains = bandGains,
+                                onGainChange = { index, newGain ->
+                                    if (isInteractive) {
+                                        audioManager.setEqualizerBand(index, newGain)
+                                    }
+                                },
+                                enabled = isInteractive
+                            )
+                        } else {
+                            InteractiveLiveEqGraph(
+                                bandGains = bandGains,
+                                onBandGainChange = { index, newGain ->
+                                    if (isInteractive) {
+                                        audioManager.setEqualizerBand(index, newGain)
+                                    }
+                                },
+                                enabled = isInteractive
+                            )
+                        }
                     }
                 }
             }
@@ -594,18 +716,96 @@ fun EqualizerScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 if (autoEqProfileName != null) {
-                    ArrowPreference(
-                        title = stringResource(R.string.autoeq_active_label),
-                        summary = autoEqProfileName ?: "",
-                        onClick = { if (isInteractive) showAutoEqDialog = true }
-                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(enabled = isInteractive) { showAutoEqDialog = true }
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(MiuixTheme.colorScheme.primary.copy(alpha = 0.16f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_xiaomi_sound),
+                                contentDescription = null,
+                                tint = MiuixTheme.colorScheme.primary,
+                                modifier = Modifier.size(19.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.autoeq_active_label),
+                                fontSize = 14.5.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = MiuixTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = autoEqProfileName ?: "",
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MiuixTheme.colorScheme.primary
+                            )
+                        }
+                        Icon(
+                            imageVector = MiuixIcons.ChevronForward,
+                            contentDescription = null,
+                            tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                 }
 
-                ArrowPreference(
-                    title = stringResource(R.string.autoeq_search_button),
-                    summary = stringResource(R.string.autoeq_search_summary),
-                    onClick = { if (isInteractive) showAutoEqDialog = true }
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(enabled = isInteractive) { showAutoEqDialog = true }
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .background(MiuixTheme.colorScheme.surfaceContainerHigh),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_search),
+                            contentDescription = stringResource(R.string.autoeq_search_button),
+                            tint = MiuixTheme.colorScheme.primary,
+                            modifier = Modifier.size(19.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(14.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.autoeq_search_button),
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MiuixTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = stringResource(R.string.autoeq_search_summary),
+                            fontSize = 12.sp,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Icon(
+                        imageVector = MiuixIcons.ChevronForward,
+                        contentDescription = null,
+                        tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
             }
         }
 
@@ -623,17 +823,111 @@ fun EqualizerScreen(
         Card(
             modifier = Modifier.fillMaxWidth()
         ) {
-            ArrowPreference(
-                title = stringResource(R.string.reset_equalizer_title),
-                summary = stringResource(R.string.reset_equalizer_summary),
-                onClick = { audioManager.resetEqualizer() }
-            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { audioManager.resetEqualizer() }
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(CircleShape)
+                        .background(MiuixTheme.colorScheme.surfaceContainerHigh),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = MiuixIcons.Refresh,
+                        contentDescription = stringResource(R.string.reset_equalizer_title),
+                        tint = MiuixTheme.colorScheme.primary,
+                        modifier = Modifier.size(19.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(14.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.reset_equalizer_title),
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MiuixTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = stringResource(R.string.reset_equalizer_summary),
+                        fontSize = 12.sp,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MiuixTheme.colorScheme.surfaceContainerHigh)
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = "0.0 dB",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary
+                    )
+                }
+            }
 
-            ArrowPreference(
-                title = stringResource(R.string.reset_dolby_title),
-                summary = stringResource(R.string.reset_dolby_summary),
-                onClick = { audioManager.resetDolbyDsp() }
-            )
+            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { audioManager.resetDolbyDsp() }
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFFE53935).copy(alpha = 0.14f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = MiuixIcons.Delete,
+                        contentDescription = stringResource(R.string.reset_dolby_title),
+                        tint = Color(0xFFE53935),
+                        modifier = Modifier.size(19.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(14.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.reset_dolby_title),
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MiuixTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = stringResource(R.string.reset_dolby_summary),
+                        fontSize = 12.sp,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFFE53935).copy(alpha = 0.12f))
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = "Factory",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFFE53935)
+                    )
+                }
+            }
         }
 
         // Extra clearance for floating bottom bar
@@ -1407,7 +1701,7 @@ fun AutoEqSearchDialog(
                             CircularProgressIndicator(color = MiuixTheme.colorScheme.primary)
                             Spacer(modifier = Modifier.height(12.dp))
                             Text(
-                                text = "Downloading & applying acoustic profile…",
+                                text = "Applying target curve…",
                                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                                 fontSize = 13.sp
                             )
