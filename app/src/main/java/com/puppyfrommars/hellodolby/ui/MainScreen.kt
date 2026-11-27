@@ -70,6 +70,8 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -204,9 +206,30 @@ fun MainScreen(
 
     val isOnDebugPage = currentTab == ScreenTab.CONTRIBUTORS && showDebugInfo
 
+    val headerFontFamily = remember {
+        FontFamily(
+            Font(R.font.space_grotesk_medium, FontWeight.Normal),
+            Font(R.font.space_grotesk_semibold, FontWeight.Medium),
+            Font(R.font.space_grotesk_bold, FontWeight.Bold)
+        )
+    }
+    val baseTextStyles = MiuixTheme.textStyles
+    val headerTextStyles = remember(baseTextStyles, headerFontFamily) {
+        baseTextStyles.copy(
+            main = baseTextStyles.main.copy(
+                fontFamily = headerFontFamily,
+                letterSpacing = (-0.5).sp
+            )
+        )
+    }
+
     Scaffold(
         topBar = {
-            TopAppBar(
+            MiuixTheme(
+                colors = MiuixTheme.colorScheme,
+                textStyles = headerTextStyles
+            ) {
+                TopAppBar(
                 title = if (isOnDebugPage) {
                     stringResource(R.string.debug_info_title)
                 } else {
@@ -268,6 +291,7 @@ fun MainScreen(
                     }
                 }
             )
+            }
         },
         floatingToolbar = {
             if (!isOnDebugPage) {

@@ -15,6 +15,8 @@ import android.media.audiofx.AudioEffect
 import android.media.audiofx.Equalizer
 import android.media.audiofx.LoudnessEnhancer
 import android.media.audiofx.Virtualizer
+import android.os.Handler
+import android.os.Looper
 import android.os.Process
 import android.provider.Settings
 import android.service.quicksettings.TileService
@@ -33,6 +35,8 @@ import java.nio.ByteOrder
 import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.roundToInt
 
 enum class EffectMode(val id: String) {
@@ -126,6 +130,14 @@ class AudioEffectManager private constructor(context: Context) {
         private const val MISOUND_PARAM_ENABLE = 25
         private const val MISOUND_PARAM_SUPER_PROFILE = 31
 
+        private const val OP_INIT_EFFECTS = 1 shl 0
+        private const val OP_FULL_DSP = 1 shl 1
+        private const val OP_REAPPLY_CLEAN_PRESET = 1 shl 2
+        private const val OP_SPATIAL = 1 shl 3
+        private const val OP_EQ_ENHANCERS = 1 shl 4
+        private const val OP_SPEAKER_TUNING = 1 shl 5
+        private const val SNAPSHOT_DEBOUNCE_MS = 180L
+
         val DEFAULT_EQUALIZER_BANDS = List(10) { 0f }
 
         val BUILTIN_PRESETS: Map<String, List<Float>> = mapOf(
@@ -193,6 +205,18 @@ class AudioEffectManager private constructor(context: Context) {
     private val spatializer: Spatializer? = runCatching { audioManager.spatializer }.getOrNull()
     private val dmsClient = DmsBinderClient()
     private val halExecutor = Executors.newSingleThreadExecutor()
+    private val pendingHalFlags = AtomicInteger(0)
+    private val halDrainScheduled = AtomicBoolean(false)
+    private val mainHandler = Handler(Looper.getMainLooper())
+    @Volatile
+    private var pendingSnapshot: AudioDeviceSnapshot? = null
+    private val pendingSnapshotRunnable = Runnable {
+        val snap = pendingSnapshot ?: return@Runnable
+        pendingSnapshot = null
+        deviceStateManager.saveSnapshot(snap)
+    }
+    @Volatile
+    private var speakerTuningsLoaded = false
 
     private var dolbyEffect: AudioEffect? = null
     private var gameDapEffect: AudioEffect? = null
@@ -340,10 +364,60 @@ class AudioEffectManager private constructor(context: Context) {
             spatializer?.addOnSpatializerStateChangedListener(appContext.mainExecutor, spatializerListener)
         }.onFailure { Log.w(TAG, "Failed registering Spatializer listener", it) }
 
-        halExecutor.execute {
-            initHalEffects()
-            applyAllDspState()
-            Log.i(TAG, verifyHalStatus())
+        scheduleHalOps(OP_INIT_EFFECTS or OP_FULL_DSP)
+    }
+
+    private fun scheduleHalOps(flags: Int) {
+        pendingHalFlags.getAndUpdate { it or flags }
+        if (halDrainScheduled.compareAndSet(false, true)) {
+            halExecutor.execute { drainPendingHalOps() }
+        }
+    }
+
+    private fun drainPendingHalOps() {
+        while (true) {
+            val flags = pendingHalFlags.getAndSet(0)
+            if (flags == 0) {
+                halDrainScheduled.set(false)
+                if (pendingHalFlags.get() == 0 || !halDrainScheduled.compareAndSet(false, true)) {
+                    return
+                }
+                continue
+            }
+
+            if ((flags and OP_INIT_EFFECTS) != 0) {
+                initHalEffects()
+            }
+
+            when {
+                (flags and OP_FULL_DSP) != 0 -> {
+                    applyAllDspState()
+                }
+                (flags and OP_REAPPLY_CLEAN_PRESET) != 0 -> {
+                    reapplyDolbyWithCleanPreset()
+                }
+                else -> {
+                    if ((flags and OP_SPEAKER_TUNING) != 0) {
+                        if (_effectModeState.value == EffectMode.DOLBY && !deviceStateManager.isHeadphonesActive()) {
+                            dmsClient.setSelectedTuningDevice(0, _speakerTuningDeviceState.value)
+                        }
+                    }
+                    if ((flags and OP_SPATIAL) != 0) {
+                        applySpatialAudioInternal(_spatialAudioState.value, currentSurroundStrength)
+                    }
+                    if ((flags and OP_EQ_ENHANCERS) != 0) {
+                        applyEqAndEnhancersInternal()
+                    }
+                }
+            }
+
+            if ((flags and OP_INIT_EFFECTS) != 0 && !speakerTuningsLoaded) {
+                speakerTuningsLoaded = true
+                val queried = dmsClient.getAvailableTuningDevices(0)
+                if (queried.isNotEmpty()) {
+                    _availableSpeakerTuningsState.value = queried
+                }
+            }
         }
     }
 
@@ -423,7 +497,22 @@ class AudioEffectManager private constructor(context: Context) {
     )
 
     private fun saveCurrentDeviceSnapshot() {
+        mainHandler.removeCallbacks(pendingSnapshotRunnable)
+        pendingSnapshot = null
         deviceStateManager.saveSnapshot(buildSnapshot())
+    }
+
+    private fun scheduleSnapshotSave() {
+        pendingSnapshot = buildSnapshot()
+        mainHandler.removeCallbacks(pendingSnapshotRunnable)
+        mainHandler.postDelayed(pendingSnapshotRunnable, SNAPSHOT_DEBOUNCE_MS)
+    }
+
+    private fun flushPendingSnapshotSave() {
+        val snap = pendingSnapshot ?: return
+        mainHandler.removeCallbacks(pendingSnapshotRunnable)
+        pendingSnapshot = null
+        deviceStateManager.saveSnapshot(snap)
     }
 
     private fun applySnapshotToState(snapshot: AudioDeviceSnapshot) {
@@ -498,9 +587,10 @@ class AudioEffectManager private constructor(context: Context) {
     }
 
     private fun onDeviceRouteChanged(snapshot: AudioDeviceSnapshot) {
+        flushPendingSnapshotSave()
         applySnapshotToState(snapshot)
         requestTileRefresh()
-        halExecutor.execute { applyAllDspState() }
+        scheduleHalOps(OP_FULL_DSP)
     }
 
     private fun createAudioEffect(uuid: UUID, priority: Int = 0): AudioEffect? {
@@ -535,9 +625,15 @@ class AudioEffectManager private constructor(context: Context) {
     }
 
     private fun ensureDolbyEffect(): AudioEffect? {
-        if (dolbyEffect == null) {
-            dolbyEffect = createAudioEffect(UUID_DOLBY_DAP, priority = 0)
+        val current = dolbyEffect
+        if (current != null) {
+            val hasCtl = runCatching { current.hasControl() }.getOrDefault(false)
+            if (hasCtl) return current
+            Log.w(TAG, "dap_hw lost AudioEffect control; recreating handle")
+            runCatching { current.release() }
+            dolbyEffect = null
         }
+        dolbyEffect = createAudioEffect(UUID_DOLBY_DAP, priority = 0)
         return dolbyEffect
     }
 
@@ -549,9 +645,15 @@ class AudioEffectManager private constructor(context: Context) {
     }
 
     private fun ensureMiSoundEffect(): AudioEffect? {
-        if (miSoundEffect == null) {
-            miSoundEffect = createAudioEffect(UUID_MISOUND_FX, priority = 0)
+        val current = miSoundEffect
+        if (current != null) {
+            val hasCtl = runCatching { current.hasControl() }.getOrDefault(false)
+            if (hasCtl) return current
+            Log.w(TAG, "misoundfx lost AudioEffect control; recreating handle")
+            runCatching { current.release() }
+            miSoundEffect = null
         }
+        miSoundEffect = createAudioEffect(UUID_MISOUND_FX, priority = 0)
         return miSoundEffect
     }
 
@@ -588,10 +690,6 @@ class AudioEffectManager private constructor(context: Context) {
         ensureFallbackEqualizer()
         ensureFallbackVirtualizer()
         ensureLoudnessEnhancer()
-        val queried = dmsClient.getAvailableTuningDevices(0)
-        if (queried.isNotEmpty()) {
-            _availableSpeakerTuningsState.value = queried
-        }
     }
 
     private fun resolveDmsActiveDeviceMask(): Int {
@@ -674,7 +772,6 @@ class AudioEffectManager private constructor(context: Context) {
         when (mode) {
             EffectMode.DOLBY -> {
                 // Disable MiSound natively via HAL (sets persist.vendor.audio.misound.disable=true inside hal_audio_default)
-                setMiSoundIntParam(MISOUND_PARAM_3D_SURROUND, 0)
                 setMiSoundIntParam(MISOUND_PARAM_ENABLE, 0)
                 runCatching { miSoundEffect?.enabled = false }
 
@@ -703,7 +800,6 @@ class AudioEffectManager private constructor(context: Context) {
                 runCatching { dolbyEffect?.enabled = false }
                 runCatching { gameDapEffect?.enabled = false }
 
-                setMiSoundIntParam(MISOUND_PARAM_3D_SURROUND, 0)
                 setMiSoundIntParam(MISOUND_PARAM_ENABLE, 0)
                 runCatching { miSoundEffect?.enabled = false }
             }
@@ -723,27 +819,26 @@ class AudioEffectManager private constructor(context: Context) {
         // Immersive Audio toggle is Dolby-exclusive (disabled for both Direct DAC and Xiaomi Sound)
         val effectiveOn = enabled && mode == EffectMode.DOLBY
 
-        when (mode) {
-            EffectMode.DOLBY -> {
-                val pId = currentDolbyProfile.id
-                if (effectiveOn) {
-                    if (headphones) {
-                        setDolbyProfileParam(pId, DmsBinderClient.DAP_PARAM_HEADPHONE_VIRTUALIZER, 1)
-                        setDolbyProfileParam(pId, DmsBinderClient.DAP_PARAM_SPEAKER_VIRTUALIZER, 0)
-                        val widening = (4 + (strength * 156) / 1000).coerceIn(4, 160)
-                        setDolbyProfileParam(pId, DmsBinderClient.DAP_PARAM_STEREO_WIDENING, widening)
-                    } else {
-                        setDolbyProfileParam(pId, DmsBinderClient.DAP_PARAM_SPEAKER_VIRTUALIZER, 1)
-                        setDolbyProfileParam(pId, DmsBinderClient.DAP_PARAM_HEADPHONE_VIRTUALIZER, 0)
-                    }
-                } else {
-                    setDolbyProfileParam(pId, DmsBinderClient.DAP_PARAM_HEADPHONE_VIRTUALIZER, 0)
-                    setDolbyProfileParam(pId, DmsBinderClient.DAP_PARAM_SPEAKER_VIRTUALIZER, 0)
+        if (mode == EffectMode.DOLBY) {
+            runCatching {
+                ensureDolbyEffect()?.let { fx ->
+                    if (!fx.enabled) fx.enabled = true
                 }
-                setMiSoundIntParam(MISOUND_PARAM_3D_SURROUND, 0)
             }
-            EffectMode.MISOUND, EffectMode.OFF -> {
-                setMiSoundIntParam(MISOUND_PARAM_3D_SURROUND, 0)
+            val pId = currentDolbyProfile.id
+            if (effectiveOn) {
+                if (headphones) {
+                    setDolbyProfileParam(pId, DmsBinderClient.DAP_PARAM_HEADPHONE_VIRTUALIZER, 1)
+                    setDolbyProfileParam(pId, DmsBinderClient.DAP_PARAM_SPEAKER_VIRTUALIZER, 0)
+                    val widening = (4 + (strength * 156) / 1000).coerceIn(4, 160)
+                    setDolbyProfileParam(pId, DmsBinderClient.DAP_PARAM_STEREO_WIDENING, widening)
+                } else {
+                    setDolbyProfileParam(pId, DmsBinderClient.DAP_PARAM_SPEAKER_VIRTUALIZER, 1)
+                    setDolbyProfileParam(pId, DmsBinderClient.DAP_PARAM_HEADPHONE_VIRTUALIZER, 0)
+                }
+            } else {
+                setDolbyProfileParam(pId, DmsBinderClient.DAP_PARAM_HEADPHONE_VIRTUALIZER, 0)
+                setDolbyProfileParam(pId, DmsBinderClient.DAP_PARAM_SPEAKER_VIRTUALIZER, 0)
             }
         }
 
@@ -823,6 +918,11 @@ class AudioEffectManager private constructor(context: Context) {
         val computedBands = computeEffectiveBands()
 
         if (mode == EffectMode.DOLBY) {
+            runCatching {
+                ensureDolbyEffect()?.let { fx ->
+                    if (!fx.enabled) fx.enabled = true
+                }
+            }
             val pId = currentDolbyProfile.id
 
             // Apply only active user overrides so Dolby presets preserve their XML tuning when toggles are off
@@ -844,11 +944,13 @@ class AudioEffectManager private constructor(context: Context) {
                 setDolbyProfileParam(pId, DmsBinderClient.DAP_PARAM_BASS_ENHANCER_ENABLE, 1)
             }
 
-            setDolbyProfileParam(
-                pId,
-                DmsBinderClient.DAP_PARAM_VIRTUAL_BASS_ENABLE,
-                if (_virtualBassEnabledState.value) 1 else 0
-            )
+            if (!deviceStateManager.isHeadphonesActive()) {
+                setDolbyProfileParam(
+                    pId,
+                    DmsBinderClient.DAP_PARAM_VIRTUAL_BASS_ENABLE,
+                    if (_virtualBassEnabledState.value) 1 else 0
+                )
+            }
 
             val reverbOn = _reverbSuppressionEnabledState.value
             setDolbyProfileParam(pId, DmsBinderClient.DAP_PARAM_REVERB_SUPPRESSION_ENABLE, if (reverbOn) 1 else 0)
@@ -919,12 +1021,14 @@ class AudioEffectManager private constructor(context: Context) {
 
     fun getEffectMode(): EffectMode = _effectModeState.value
 
-    fun setEffectMode(mode: EffectMode) {
+    fun setEffectMode(mode: EffectMode, notifyTile: Boolean = true) {
         _effectModeState.value = mode
         prefs.edit().putString(KEY_EFFECT_MODE, mode.id).apply()
         saveCurrentDeviceSnapshot()
-        requestTileRefresh()
-        halExecutor.execute { applyAllDspState() }
+        if (notifyTile) {
+            requestTileRefresh()
+        }
+        scheduleHalOps(OP_FULL_DSP)
     }
 
     private fun reapplyDolbyWithCleanPreset() {
@@ -945,7 +1049,7 @@ class AudioEffectManager private constructor(context: Context) {
         saveCurrentDeviceSnapshot()
         requestTileRefresh()
         if (_effectModeState.value == EffectMode.DOLBY) {
-            halExecutor.execute { reapplyDolbyWithCleanPreset() }
+            scheduleHalOps(OP_REAPPLY_CLEAN_PRESET)
         }
     }
 
@@ -955,13 +1059,7 @@ class AudioEffectManager private constructor(context: Context) {
         _spatialAudioState.value = enabled
         prefs.edit().putBoolean(KEY_SPATIAL_AUDIO_ENABLED, enabled).apply()
         saveCurrentDeviceSnapshot()
-        halExecutor.execute {
-            if (!enabled) {
-                reapplyDolbyWithCleanPreset()
-            } else {
-                applySpatialAudioInternal(true, currentSurroundStrength)
-            }
-        }
+        scheduleHalOps(OP_SPATIAL)
     }
 
     fun getSurroundStrength(): Int = currentSurroundStrength
@@ -971,9 +1069,9 @@ class AudioEffectManager private constructor(context: Context) {
         currentSurroundStrength = clamped
         _surroundStrengthState.value = clamped
         prefs.edit().putInt(KEY_SURROUND_STRENGTH, clamped).apply()
-        saveCurrentDeviceSnapshot()
+        scheduleSnapshotSave()
         if (_spatialAudioState.value) {
-            halExecutor.execute { applySpatialAudioInternal(true, clamped) }
+            scheduleHalOps(OP_SPATIAL)
         }
     }
 
@@ -981,18 +1079,16 @@ class AudioEffectManager private constructor(context: Context) {
         _bassEnhancerEnabledState.value = enabled
         prefs.edit().putBoolean(KEY_BASS_ENHANCER_ENABLED, enabled).apply()
         saveCurrentDeviceSnapshot()
-        halExecutor.execute {
-            if (!enabled) reapplyDolbyWithCleanPreset() else applyEqAndEnhancersInternal()
-        }
+        scheduleHalOps(if (!enabled) OP_REAPPLY_CLEAN_PRESET else OP_EQ_ENHANCERS)
     }
 
     fun setBassEnhancerLevel(level: Int) {
         val clamped = level.coerceIn(0, 100)
         _bassEnhancerLevelState.value = clamped
         prefs.edit().putInt(KEY_BASS_ENHANCER_LEVEL, clamped).apply()
-        saveCurrentDeviceSnapshot()
+        scheduleSnapshotSave()
         if (_bassEnhancerEnabledState.value) {
-            halExecutor.execute { applyEqAndEnhancersInternal() }
+            scheduleHalOps(OP_EQ_ENHANCERS)
         }
     }
 
@@ -1000,18 +1096,16 @@ class AudioEffectManager private constructor(context: Context) {
         _midEnhancerEnabledState.value = enabled
         prefs.edit().putBoolean(KEY_MID_ENHANCER_ENABLED, enabled).apply()
         saveCurrentDeviceSnapshot()
-        halExecutor.execute {
-            if (!enabled) reapplyDolbyWithCleanPreset() else applyEqAndEnhancersInternal()
-        }
+        scheduleHalOps(OP_EQ_ENHANCERS)
     }
 
     fun setMidEnhancerLevel(level: Int) {
         val clamped = level.coerceIn(0, 100)
         _midEnhancerLevelState.value = clamped
         prefs.edit().putInt(KEY_MID_ENHANCER_LEVEL, clamped).apply()
-        saveCurrentDeviceSnapshot()
+        scheduleSnapshotSave()
         if (_midEnhancerEnabledState.value) {
-            halExecutor.execute { applyEqAndEnhancersInternal() }
+            scheduleHalOps(OP_EQ_ENHANCERS)
         }
     }
 
@@ -1019,18 +1113,16 @@ class AudioEffectManager private constructor(context: Context) {
         _trebleEnhancerEnabledState.value = enabled
         prefs.edit().putBoolean(KEY_TREBLE_ENHANCER_ENABLED, enabled).apply()
         saveCurrentDeviceSnapshot()
-        halExecutor.execute {
-            if (!enabled) reapplyDolbyWithCleanPreset() else applyEqAndEnhancersInternal()
-        }
+        scheduleHalOps(OP_EQ_ENHANCERS)
     }
 
     fun setTrebleEnhancerLevel(level: Int) {
         val clamped = level.coerceIn(0, 100)
         _trebleEnhancerLevelState.value = clamped
         prefs.edit().putInt(KEY_TREBLE_ENHANCER_LEVEL, clamped).apply()
-        saveCurrentDeviceSnapshot()
+        scheduleSnapshotSave()
         if (_trebleEnhancerEnabledState.value) {
-            halExecutor.execute { applyEqAndEnhancersInternal() }
+            scheduleHalOps(OP_EQ_ENHANCERS)
         }
     }
 
@@ -1038,18 +1130,16 @@ class AudioEffectManager private constructor(context: Context) {
         _dialogueEnhancerEnabledState.value = enabled
         prefs.edit().putBoolean(KEY_DIALOGUE_ENHANCER_ENABLED, enabled).apply()
         saveCurrentDeviceSnapshot()
-        halExecutor.execute {
-            if (!enabled) reapplyDolbyWithCleanPreset() else applyEqAndEnhancersInternal()
-        }
+        scheduleHalOps(if (!enabled) OP_REAPPLY_CLEAN_PRESET else OP_EQ_ENHANCERS)
     }
 
     fun setDialogueEnhancerLevel(level: Int) {
         val clamped = level.coerceIn(0, 100)
         _dialogueEnhancerLevelState.value = clamped
         prefs.edit().putInt(KEY_DIALOGUE_ENHANCER_LEVEL, clamped).apply()
-        saveCurrentDeviceSnapshot()
+        scheduleSnapshotSave()
         if (_dialogueEnhancerEnabledState.value) {
-            halExecutor.execute { applyEqAndEnhancersInternal() }
+            scheduleHalOps(OP_EQ_ENHANCERS)
         }
     }
 
@@ -1057,18 +1147,16 @@ class AudioEffectManager private constructor(context: Context) {
         _volumeLevelerEnabledState.value = enabled
         prefs.edit().putBoolean(KEY_VOLUME_LEVELER_ENABLED, enabled).apply()
         saveCurrentDeviceSnapshot()
-        halExecutor.execute {
-            if (!enabled) reapplyDolbyWithCleanPreset() else applyEqAndEnhancersInternal()
-        }
+        scheduleHalOps(if (!enabled) OP_REAPPLY_CLEAN_PRESET else OP_EQ_ENHANCERS)
     }
 
     fun setVolumeLevelerLevel(level: Int) {
         val clamped = level.coerceIn(0, 100)
         _volumeLevelerLevelState.value = clamped
         prefs.edit().putInt(KEY_VOLUME_LEVELER_LEVEL, clamped).apply()
-        saveCurrentDeviceSnapshot()
+        scheduleSnapshotSave()
         if (_volumeLevelerEnabledState.value) {
-            halExecutor.execute { applyEqAndEnhancersInternal() }
+            scheduleHalOps(OP_EQ_ENHANCERS)
         }
     }
 
@@ -1081,9 +1169,7 @@ class AudioEffectManager private constructor(context: Context) {
         }
         editor.apply()
         saveCurrentDeviceSnapshot()
-        halExecutor.execute {
-            if (!enabled) reapplyDolbyWithCleanPreset() else applyEqAndEnhancersInternal()
-        }
+        scheduleHalOps(OP_EQ_ENHANCERS)
     }
 
     fun setIeqPreset(preset: IeqPreset) {
@@ -1096,22 +1182,16 @@ class AudioEffectManager private constructor(context: Context) {
         }
         editor.apply()
         saveCurrentDeviceSnapshot()
-        halExecutor.execute {
-            if (preset == IeqPreset.OFF || clearedCustomEq) {
-                reapplyDolbyWithCleanPreset()
-            } else {
-                applyEqAndEnhancersInternal()
-            }
-        }
+        scheduleHalOps(OP_EQ_ENHANCERS)
     }
 
     fun setIeqAmount(level: Int) {
         val clamped = level.coerceIn(0, 100)
         _ieqAmountState.value = clamped
         prefs.edit().putInt(KEY_IEQ_AMOUNT, clamped).apply()
-        saveCurrentDeviceSnapshot()
+        scheduleSnapshotSave()
         if (_ieqPresetState.value != IeqPreset.OFF && !_equalizerEnabledState.value) {
-            halExecutor.execute { applyEqAndEnhancersInternal() }
+            scheduleHalOps(OP_EQ_ENHANCERS)
         }
     }
 
@@ -1119,35 +1199,31 @@ class AudioEffectManager private constructor(context: Context) {
         val clamped = level.coerceIn(0, 100)
         _dialogueDuckingState.value = clamped
         prefs.edit().putInt(KEY_DIALOGUE_DUCKING, clamped).apply()
-        saveCurrentDeviceSnapshot()
-        halExecutor.execute { applyEqAndEnhancersInternal() }
+        scheduleSnapshotSave()
+        scheduleHalOps(OP_EQ_ENHANCERS)
     }
 
     fun setVirtualBassEnabled(enabled: Boolean) {
         _virtualBassEnabledState.value = enabled
         prefs.edit().putBoolean(KEY_VIRTUAL_BASS_ENABLED, enabled).apply()
         saveCurrentDeviceSnapshot()
-        halExecutor.execute {
-            if (!enabled) reapplyDolbyWithCleanPreset() else applyEqAndEnhancersInternal()
-        }
+        scheduleHalOps(OP_EQ_ENHANCERS)
     }
 
     fun setReverbSuppressionEnabled(enabled: Boolean) {
         _reverbSuppressionEnabledState.value = enabled
         prefs.edit().putBoolean(KEY_REVERB_SUPPRESSION_ENABLED, enabled).apply()
         saveCurrentDeviceSnapshot()
-        halExecutor.execute {
-            if (!enabled) reapplyDolbyWithCleanPreset() else applyEqAndEnhancersInternal()
-        }
+        scheduleHalOps(OP_EQ_ENHANCERS)
     }
 
     fun setReverbSuppressionAmount(level: Int) {
         val clamped = level.coerceIn(0, 100)
         _reverbSuppressionAmountState.value = clamped
         prefs.edit().putInt(KEY_REVERB_SUPPRESSION_AMOUNT, clamped).apply()
-        saveCurrentDeviceSnapshot()
+        scheduleSnapshotSave()
         if (_reverbSuppressionEnabledState.value) {
-            halExecutor.execute { applyEqAndEnhancersInternal() }
+            scheduleHalOps(OP_EQ_ENHANCERS)
         }
     }
 
@@ -1155,16 +1231,16 @@ class AudioEffectManager private constructor(context: Context) {
         _loudnessBoostEnabledState.value = enabled
         prefs.edit().putBoolean(KEY_LOUDNESS_BOOST_ENABLED, enabled).apply()
         saveCurrentDeviceSnapshot()
-        halExecutor.execute { applyEqAndEnhancersInternal() }
+        scheduleHalOps(OP_EQ_ENHANCERS)
     }
 
     fun setLoudnessBoostDb(db: Int) {
         val clamped = db.coerceIn(0, 10)
         _loudnessBoostDbState.value = clamped
         prefs.edit().putInt(KEY_LOUDNESS_BOOST_DB, clamped).apply()
-        saveCurrentDeviceSnapshot()
+        scheduleSnapshotSave()
         if (_loudnessBoostEnabledState.value) {
-            halExecutor.execute { applyEqAndEnhancersInternal() }
+            scheduleHalOps(OP_EQ_ENHANCERS)
         }
     }
 
@@ -1173,17 +1249,15 @@ class AudioEffectManager private constructor(context: Context) {
         _speakerTuningDeviceState.value = deviceName
         prefs.edit().putString(KEY_SPEAKER_TUNING_DEVICE, deviceName).apply()
         saveCurrentDeviceSnapshot()
-        halExecutor.execute {
-            if (_effectModeState.value == EffectMode.DOLBY && !deviceStateManager.isHeadphonesActive()) {
-                dmsClient.setSelectedTuningDevice(0, deviceName)
-            }
-        }
+        scheduleHalOps(OP_SPEAKER_TUNING)
     }
 
     fun setEqualizerBand(index: Int, gainDb: Float) {
         if (index !in 0 until 10) return
         val updated = _equalizerBandsState.value.toMutableList()
-        updated[index] = (gainDb.coerceIn(-10f, 10f) * 10f).roundToInt() / 10f
+        val snapped = (gainDb.coerceIn(-10f, 10f) * 10f).roundToInt() / 10f
+        if (updated[index] == snapped) return
+        updated[index] = snapped
         _equalizerBandsState.value = updated
         _equalizerPresetState.value = "Custom"
         _autoEqProfileNameState.value = null
@@ -1192,8 +1266,8 @@ class AudioEffectManager private constructor(context: Context) {
             .putString(KEY_EQUALIZER_PRESET, "Custom")
             .remove(KEY_AUTOEQ_PROFILE_NAME)
             .apply()
-        saveCurrentDeviceSnapshot()
-        halExecutor.execute { applyEqAndEnhancersInternal() }
+        scheduleSnapshotSave()
+        scheduleHalOps(OP_EQ_ENHANCERS)
     }
 
     fun setEqualizerPreset(presetName: String) {
@@ -1208,7 +1282,7 @@ class AudioEffectManager private constructor(context: Context) {
             .remove(KEY_AUTOEQ_PROFILE_NAME)
             .apply()
         saveCurrentDeviceSnapshot()
-        halExecutor.execute { applyEqAndEnhancersInternal() }
+        scheduleHalOps(OP_EQ_ENHANCERS)
     }
 
     fun saveCustomPreset(name: String, bands: List<Float>) {
@@ -1226,7 +1300,7 @@ class AudioEffectManager private constructor(context: Context) {
             .remove(KEY_AUTOEQ_PROFILE_NAME)
             .apply()
         saveCurrentDeviceSnapshot()
-        halExecutor.execute { applyEqAndEnhancersInternal() }
+        scheduleHalOps(OP_EQ_ENHANCERS)
     }
 
     fun renameCustomPreset(oldName: String, newName: String) {
@@ -1266,7 +1340,7 @@ class AudioEffectManager private constructor(context: Context) {
             .putString(KEY_AUTOEQ_PROFILE_NAME, name)
             .apply()
         saveCurrentDeviceSnapshot()
-        halExecutor.execute { applyEqAndEnhancersInternal() }
+        scheduleHalOps(OP_EQ_ENHANCERS)
     }
 
     fun resetEqualizer() {
@@ -1279,7 +1353,7 @@ class AudioEffectManager private constructor(context: Context) {
             .remove(KEY_AUTOEQ_PROFILE_NAME)
             .apply()
         saveCurrentDeviceSnapshot()
-        halExecutor.execute { reapplyDolbyWithCleanPreset() }
+        scheduleHalOps(OP_REAPPLY_CLEAN_PRESET)
     }
 
     private fun buildDefaultSnapshotForDevice(deviceKey: String, displayName: String) = AudioDeviceSnapshot(
@@ -1319,13 +1393,13 @@ class AudioEffectManager private constructor(context: Context) {
         val activeName = deviceStateManager.getActiveDeviceName()
         val defaults = buildDefaultSnapshotForDevice(activeKey, activeName)
         applySnapshotToState(defaults)
-        deviceStateManager.saveSnapshot(defaults)
+        saveCurrentDeviceSnapshot()
         requestTileRefresh()
         halExecutor.execute {
             for (p in listOf(0, 1, 2, 3, 4, 8)) {
                 dmsClient.resetProfile(p)
             }
-            applyAllDspState()
+            scheduleHalOps(OP_FULL_DSP)
         }
     }
 

@@ -39,7 +39,7 @@ class DolbyTileService : TileService() {
             EffectMode.DOLBY
         }
         Log.d("DolbyTileService", "Toggling effect mode from $currentMode to $newMode")
-        audioManager.setEffectMode(newMode)
+        audioManager.setEffectMode(newMode, notifyTile = false)
         updateTileState()
     }
 

@@ -121,10 +121,12 @@ class DmsBinderClient {
     @Volatile
     private var cachedBinder: IBinder? = null
 
-    private fun getBinder(): IBinder? = synchronized(binderLock) {
-        val existing = cachedBinder
-        if (existing != null && existing.isBinderAlive && existing.pingBinder()) {
-            return existing
+    private fun getBinder(forceRefresh: Boolean = false): IBinder? = synchronized(binderLock) {
+        if (!forceRefresh) {
+            val existing = cachedBinder
+            if (existing != null && existing.isBinderAlive) {
+                return existing
+            }
         }
         val binder = try {
             val sm = Class.forName("android.os.ServiceManager")
@@ -144,8 +146,18 @@ class DmsBinderClient {
             } catch (_: Exception) {
             }
             cachedBinder = binder
+        } else {
+            cachedBinder = null
         }
         binder
+    }
+
+    private fun invalidateBinder(stale: IBinder) {
+        synchronized(binderLock) {
+            if (cachedBinder === stale) {
+                cachedBinder = null
+            }
+        }
     }
 
     fun isAvailable(): Boolean = getBinder() != null
@@ -170,43 +182,63 @@ class DmsBinderClient {
     }
 
     fun sendCommand(commandId: Int, payload: ByteArray): Boolean {
-        val binder = getBinder() ?: return false
-        val data = Parcel.obtain()
-        val reply = Parcel.obtain()
-        return try {
-            data.writeInterfaceToken(DESCRIPTOR)
-            data.writeInt(commandId)
-            data.writeByteArray(payload)
-            binder.transact(TRANSACTION_SEND_COMMAND, data, reply, IBinder.FLAG_ONEWAY)
-        } catch (e: Exception) {
-            Log.e(TAG, "sendCommand(0x${commandId.toString(16)}) failed", e)
-            false
-        } finally {
-            data.recycle()
-            reply.recycle()
+        for (attempt in 0..1) {
+            val binder = getBinder(forceRefresh = attempt > 0) ?: return false
+            val data = Parcel.obtain()
+            val reply = Parcel.obtain()
+            try {
+                data.writeInterfaceToken(DESCRIPTOR)
+                data.writeInt(commandId)
+                data.writeByteArray(payload)
+                if (binder.transact(TRANSACTION_SEND_COMMAND, data, reply, IBinder.FLAG_ONEWAY)) {
+                    return true
+                }
+                invalidateBinder(binder)
+            } catch (e: android.os.DeadObjectException) {
+                invalidateBinder(binder)
+                if (attempt == 1) {
+                    Log.e(TAG, "sendCommand(0x${commandId.toString(16)}) dead binder", e)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "sendCommand(0x${commandId.toString(16)}) failed", e)
+                return false
+            } finally {
+                data.recycle()
+                reply.recycle()
+            }
         }
+        return false
     }
 
     fun handleRequest(requestId: Int, inData: ByteArray = ByteArray(0)): ByteArray? {
-        val binder = getBinder() ?: return null
-        val data = Parcel.obtain()
-        val reply = Parcel.obtain()
-        return try {
-            data.writeInterfaceToken(DESCRIPTOR)
-            data.writeInt(requestId)
-            data.writeByteArray(inData)
-            if (!binder.transact(TRANSACTION_HANDLE_REQUEST, data, reply, 0)) {
+        for (attempt in 0..1) {
+            val binder = getBinder(forceRefresh = attempt > 0) ?: return null
+            val data = Parcel.obtain()
+            val reply = Parcel.obtain()
+            try {
+                data.writeInterfaceToken(DESCRIPTOR)
+                data.writeInt(requestId)
+                data.writeByteArray(inData)
+                if (!binder.transact(TRANSACTION_HANDLE_REQUEST, data, reply, 0)) {
+                    invalidateBinder(binder)
+                    continue
+                }
+                reply.readException()
+                return reply.createByteArray()
+            } catch (e: android.os.DeadObjectException) {
+                invalidateBinder(binder)
+                if (attempt == 1) {
+                    Log.e(TAG, "handleRequest(0x${requestId.toString(16)}) dead binder", e)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "handleRequest(0x${requestId.toString(16)}) failed", e)
                 return null
+            } finally {
+                data.recycle()
+                reply.recycle()
             }
-            reply.readException()
-            reply.createByteArray()
-        } catch (e: Exception) {
-            Log.e(TAG, "handleRequest(0x${requestId.toString(16)}) failed", e)
-            null
-        } finally {
-            data.recycle()
-            reply.recycle()
         }
+        return null
     }
 
     fun setDsOn(enabled: Boolean): Boolean =
